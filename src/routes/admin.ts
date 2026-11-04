@@ -332,6 +332,7 @@ export function computeAlerts(ctx: AppContext, now = Date.now()): { alerts: Aler
     .prepare(
       `SELECT action, actor_email AS actor, ts, target_user_id FROM audit_log
        WHERE action IN ('user.password_reset','user.deactivate','user.reactivate','user.update','user.create','user.documents_transferred') AND ts >= ?
+         AND COALESCE(actor_email, '') != 'seed'
        ORDER BY ts DESC LIMIT 50`,
     )
     .all(day) as { action: string; actor: string; ts: number; target_user_id: string }[];

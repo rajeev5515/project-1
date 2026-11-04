@@ -99,6 +99,7 @@ const M: Mutation[] = [
   { id: 'upload-magic', file: 'src/validation.ts', find: 'if (!type.matches(data))', replace: 'if (false)', why: 'content not checked against extension' },
   { id: 'upload-path-strip', file: 'src/validation.ts', find: "name = name.split(/[\\\\/]/).pop() ?? '';", replace: '', why: 'path components kept in filename' },
   { id: 'ai-candidates', file: 'src/suggest.ts', find: 'WHERE d.owner_id = :ownerId', replace: 'WHERE 1=1', why: "suggestions drawn from other owners' sharing" },
+  { id: 'ai-personal-docs', file: 'src/suggest.ts', find: 'AND (SELECT COUNT(*) FROM grants g2 WHERE g2.document_id = d.id) >= 2', replace: '', why: 'personal documents count as evidence (suggests Victor for Vera\'s salary letter)' },
 ];
 
 const CONTROL_IDS = new Set(['control-noop']); // expected to survive: proves the harness is not just failing everything

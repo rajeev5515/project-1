@@ -421,6 +421,27 @@ describe('T22 AI suggestions never widen access', () => {
   });
 });
 
+describe('T22e suggestions ignore personal (single-recipient) documents as evidence', () => {
+  test("Victor is not suggested for Vera's salary letter just because he got his own", async () => {
+    const owner = await login(env, 'olivia');
+    // Fresh HR doc shared with nobody; the only HR doc shared with 2+ people is the handbook.
+    const up = await owner.upload('/api/documents', { title: 'Salary letter - someone new', category: 'HR' }, { name: 's.txt', data: 'salary' });
+    const id = up.json.document.id;
+    // Make the handbook single-recipient for this check: remove Vera's handbook grant.
+    const hb = env.docs[DOC.handbook];
+    const veraGrant = env.ctx.db.prepare('SELECT * FROM grants WHERE document_id = ? AND user_id = ?').get(hb, env.ids.vera) as any;
+    env.ctx.db.prepare('DELETE FROM grants WHERE id = ?').run(veraGrant.id);
+    try {
+      const s = await owner.post(`/api/documents/${id}/suggestions`);
+      assert.deepEqual(s.json.suggestions, [], 'only single-recipient HR documents remain, so no evidence');
+    } finally {
+      env.ctx.db
+        .prepare('INSERT INTO grants (id, document_id, user_id, permission, granted_by, created_at, expires_at) VALUES (?,?,?,?,?,?,?)')
+        .run(veraGrant.id, veraGrant.document_id, veraGrant.user_id, veraGrant.permission, veraGrant.granted_by, veraGrant.created_at, veraGrant.expires_at);
+    }
+  });
+});
+
 describe('Alerts', () => {
   test('probing other people\'s documents raises an alert', async () => {
     const pat = await login(env, 'pat');

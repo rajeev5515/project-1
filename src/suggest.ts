@@ -53,6 +53,10 @@ function buildCandidates(ctx: AppContext, doc: DocumentRow): Candidate[] {
        JOIN users u ON u.id = g.user_id AND u.active = 1
        WHERE d.owner_id = :ownerId
          AND d.id != :docId
+         -- Only documents shared with 2+ people count as evidence of working
+         -- together. A document shared with one person (a salary letter, a
+         -- personal contract) says nothing about who else should see things.
+         AND (SELECT COUNT(*) FROM grants g2 WHERE g2.document_id = d.id) >= 2
          AND u.id != :ownerId
          AND u.id NOT IN (SELECT user_id FROM grants WHERE document_id = :docId)
        GROUP BY u.id
@@ -72,7 +76,7 @@ function heuristic(candidates: Candidate[]): Suggestion[] {
       email: c.email,
       // Suggest the narrower permission unless they usually edit this owner's documents.
       permission: c.editCount > c.sharedWithCount / 2 ? 'edit' : 'read',
-      reason: `You have shared ${c.sameCategoryCount} other ${'document'}${c.sameCategoryCount === 1 ? '' : 's'} in this category with them`,
+      reason: `You shared ${c.sameCategoryCount} other team document${c.sameCategoryCount === 1 ? '' : 's'} in this category with them. Check this document is not personal to someone else.`,
     }));
 }
 
@@ -123,7 +127,8 @@ async function withClaude(ctx: AppContext, doc: DocumentRow, candidates: Candida
     output_config: { effort: 'low', format: { type: 'json_schema', schema: RESPONSE_SCHEMA } },
     messages: [{ role: 'user', content: `<data>${JSON.stringify(payload)}</data>` }],
   });
-  if (response.stop_reason === 'refusal') return [];
+  // A refusal or truncated answer is not "nobody needs access": fall back to the heuristic.
+  if (response.stop_reason !== 'end_turn') throw new Error(`model stopped: ${response.stop_reason}`);
   const text = response.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
   const parsed = JSON.parse(text) as { suggestions: { userId: string; permission: 'read' | 'edit'; reason: string }[] };
   const byId = new Map(candidates.map((c) => [c.id, c]));
