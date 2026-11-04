@@ -123,7 +123,11 @@ export function authorizeDocument(db: DB, userId: string, documentId: string, ac
   const { doc, access } = found;
   if (access === null) return { allowed: false, reason: 'no_access', access: null };
   const isTrashAction = TRASH_ACTIONS.has(action);
-  if (doc.deleted_at !== null && !isTrashAction) return { allowed: false, reason: 'deleted', access };
+  // A deleted document does not exist for anyone but its owner: a former
+  // grantee gets the same answer as for an id that never existed, for every
+  // action, including restore/purge (where 'insufficient' would confirm that
+  // the document is sitting in someone's trash).
+  if (doc.deleted_at !== null && (access !== 'owner' || !isTrashAction)) return { allowed: false, reason: 'deleted', access };
   if (doc.deleted_at === null && isTrashAction) return { allowed: false, reason: 'not_found', access };
   if (RANK[access] < RANK[REQUIRED_LEVEL[action]]) return { allowed: false, reason: 'insufficient', access };
   return { allowed: true, doc, access };
