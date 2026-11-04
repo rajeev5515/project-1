@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/server.ts",
     "seed": "node --disable-warning=ExperimentalWarning scripts/seed.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 test/",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "mutate": "node --disable-warning=ExperimentalWarning scripts/mutation-check.ts",
     "verify-audit": "node --disable-warning=ExperimentalWarning scripts/verify-audit.ts"

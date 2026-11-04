@@ -186,7 +186,12 @@ export class RateLimiter {
     this.limit = limit;
     this.windowMs = windowMs;
   }
-  /** Returns true if this hit is allowed. */
+  /** True if the key is already over its limit (does not count a hit). */
+  blocked(key: string): boolean {
+    const entry = this.hits.get(key);
+    return !!entry && entry.resetAt > Date.now() && entry.count >= this.limit;
+  }
+  /** Count one hit. Returns true if this hit is still within the limit. */
   hit(key: string): boolean {
     const now = Date.now();
     const entry = this.hits.get(key);

@@ -31,13 +31,15 @@ interface UserAuthRow {
 
 export function authRoutes(ctx: AppContext): Router {
   const r = Router();
-  const ipLimiter = new RateLimiter(20, 15 * 60_000);
+  // Counts FAILED sign-ins per IP. Successful sign-ins do not count, so an
+  // office behind one NAT address is not locked out by its own users.
+  const ipFailures = new RateLimiter(20, 15 * 60_000);
 
   r.post('/login', (req, res) => {
     const body = onlyKeys(req.body, ['email', 'password']);
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase().slice(0, 254) : '';
     const password = typeof body.password === 'string' ? body.password.slice(0, 256) : '';
-    if (!ipLimiter.hit(req.ip ?? 'unknown')) {
+    if (ipFailures.blocked(req.ip ?? 'unknown')) {
       ctx.audit.record({ action: 'auth.login', outcome: 'denied', actorEmail: email, ip: req.ip, details: { reason: 'ip_rate_limited' } });
       throw new HttpError(429, 'rate_limited', 'Too many sign-in attempts. Try again later.');
     }
@@ -53,6 +55,7 @@ export function authRoutes(ctx: AppContext): Router {
     else if (!passwordOk) reason = 'bad_password';
 
     if (reason || !user) {
+      ipFailures.hit(req.ip ?? 'unknown');
       if (user && reason === 'bad_password') {
         const failed = user.failed_logins + 1;
         const lock = failed >= MAX_FAILED_LOGINS ? now + LOCKOUT_MS : null;
