@@ -128,3 +128,48 @@ because busboy rejects most control characters before our code sees them,
 which the original test had assumed it would not.
 
 Commit: [d1ddd1a](https://github.com/rajeev5515/project-1/commit/d1ddd1a)
+
+---
+
+## Entry 5 — 2026-11-04 — The AI sharing suggestion recommended exactly the wrong person (access control)
+
+**Asked:** "Suggest who should see a document: rank people the owner already
+shares with, prefer the same category. Never grant automatically. Fall back
+to a heuristic when there is no API key."
+
+**Produced:** `src/suggest.ts`, with a candidate query of "users this owner
+has granted other documents to, ranked by same-category count", and a
+`stop_reason === 'refusal'` branch that returned an empty list. The tests it
+wrote checked the boundary properly (no grant is created, the suggestion and
+the decision are audited, ids outside the candidate list are dropped), and
+they passed.
+
+**What was wrong:** When I opened the UI in a browser (Playwright screenshot)
+on *Vera's salary letter*, the top suggestion was **Victor**: "You have shared
+2 other documents in this category with them". One of those two was
+Victor's *own* salary letter. The heuristic took "Olivia shares HR documents
+with Victor" as evidence that Victor should see Vera's pay. That is the most
+damaging suggestion it could have made for this document, phrased with
+confidence. The rule "the machine never widens access" held, because the
+owner still has to click Confirm, but a suggestion like this one trains
+people to click Confirm on bad advice. Separately, the refusal branch
+returned `[]`, which the UI shows as "No suggestions": a model refusal
+silently turned into "nobody needs access".
+
+**What I did instead:**
+* Only documents shared with **two or more** people count as evidence of
+  working together. A single-recipient document (salary letter, personal
+  contract) is personal and says nothing about anyone else.
+* The reason text now says "team document" and tells the owner to check that
+  this document is not personal to someone else.
+* Any `stop_reason` other than `end_turn` falls back to the heuristic,
+  with a note shown to the owner.
+* Test `security › T22e … Victor is not suggested for Vera's salary letter…`,
+  and mutation `ai-personal-docs`, which removes the rule and is killed by
+  that test.
+
+The lesson for the interview: the boundary tests passed and were correct.
+The failure was in the *quality* of the advice, and it only showed up by
+looking at real data in the real UI.
+
+Commit: [8b7e2f7](https://github.com/rajeev5515/project-1/commit/8b7e2f7)
