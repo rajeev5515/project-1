@@ -35,4 +35,96 @@ check means removing either one leaves the tests green, which is exactly the
 mutation test the brief describes. One rule, tested, beats two rules where
 neither is.
 
-Commit: see `git log --grep "core backend"`.
+Commit: [8211876](https://github.com/rajeev5515/project-1/commit/8211876) (`src/authz.ts`, list query in `src/routes/documents.ts`).
+
+---
+
+## Entry 2 — 2026-11-04 — Login rate limiting (authentication)
+
+**Asked:** Add brute-force protection to `POST /api/auth/login`: per-account
+lockout and a per-IP limit.
+
+**Produced:** A per-account lockout (5 failures → 15 minutes) and a fixed-window
+`RateLimiter` per IP that called `hit()` at the top of the handler, before the
+password was checked.
+
+**What was wrong:** `hit()` before the check counts **every** attempt,
+including successful ones. Twenty people signing in from one office NAT
+address within 15 minutes would get `429` for everyone after that, and that
+is the normal case for a company. It showed up when the isolation test suite,
+which logs in 20+ times from 127.0.0.1, started failing with 429 on valid
+credentials. The generated code had no test for "valid logins are not
+limited". It only had the abstract "limit is 20".
+
+**What I did instead:** Added `RateLimiter.blocked()` (a check that does not
+count) and call `hit()` only on failures. Successful sign-ins never consume
+the budget. Test: `security › T15 › many failures from one IP are rate
+limited`, which also asserts that a blocked IP is refused even with valid
+credentials while the window lasts.
+
+Commit: [93abc84](https://github.com/rajeev5515/project-1/commit/93abc84)
+
+---
+
+## Entry 3 — 2026-11-04 — Deleted documents leaked their existence (authorisation)
+
+**Asked:** Add soft delete with a trash, restore and purge, owner-only, and
+make deleted documents unreachable for grantees.
+
+**Produced:** In `authorizeDocument()`:
+
+```ts
+const isTrashAction = TRASH_ACTIONS.has(action);
+if (doc.deleted_at !== null && !isTrashAction) return { allowed: false, reason: 'deleted', access };
+...
+if (RANK[access] < RANK[REQUIRED_LEVEL[action]]) return { allowed: false, reason: 'insufficient', access };
+```
+
+It looked right, and the AI's own happy-path test (owner deletes, grantee gets
+404 on download) passed.
+
+**What was wrong:** For `restore` and `purge` the deleted check is skipped, so
+a **former grantee** falls through to the level check and gets
+`insufficient`, which `gate()` maps to **403**. For an id that does not exist
+the answer is 404. So anyone who was ever granted a document could tell
+whether it was sitting in the owner's trash or had been purged: an existence
+oracle on exactly the documents someone tried to take away from them. Caught
+by the test `revocation › T12 › …only the owner can restore`, which I wrote
+from the attacker's side (a former grantee calls every trash route) rather
+than the owner's.
+
+**What I did instead:** For a deleted document, anyone who is not the owner
+gets `deleted` (→ 404) on **every** action. The owner gets only restore and
+purge. Added `authz.test › a deleted document…`, which asserts the *reason*
+(`deleted`) for the grantee on every action, and a mutation
+(`authz-deleted-grantee-trash`) that reintroduces the bug and must be caught.
+
+Commit: [0b440d4](https://github.com/rajeev5515/project-1/commit/0b440d4)
+
+---
+
+## Entry 4 — 2026-11-04 — Upload parser hung on malformed input
+
+**Asked:** A multipart upload parser with busboy: one file, a size limit,
+refuse rather than truncate oversized files.
+
+**Produced:** `parseUpload()` that resolved or rejected only in busboy's
+`close` handler, and mapped `error` to "remember the failure".
+
+**What was wrong:** On malformed input (here, a NUL byte in a filename from
+my path-traversal test) busboy emits `error` and **never** `close`. The
+promise never settled, so the request hung, holding its memory, until the
+client gave up. Anyone could tie up server connections by sending a broken
+multipart body. Found because the security suite hung for 120 seconds instead
+of failing; I bisected it to that test with a 5-second watchdog script.
+
+**What I did instead:** A single `settle()` called from `error`, `close` and
+`req.on('aborted')`. It unpipes and drains the request, and rejects with 400.
+Added `security › T16 › malformed multipart is refused promptly instead of
+hanging the request`, which sends both a NUL filename and a body with a
+boundary but no parts, and asserts a 400 in under 5 seconds. The sanitiser is
+now unit-tested separately (`sanitizeFilename strips control characters…`),
+because busboy rejects most control characters before our code sees them,
+which the original test had assumed it would not.
+
+Commit: [d1ddd1a](https://github.com/rajeev5515/project-1/commit/d1ddd1a)
