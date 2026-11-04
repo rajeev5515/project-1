@@ -102,6 +102,24 @@ const M: Mutation[] = [
   { id: 'ai-personal-docs', file: 'src/suggest.ts', find: 'AND (SELECT COUNT(*) FROM grants g2 WHERE g2.document_id = d.id) >= 2', replace: '', why: 'personal documents count as evidence (suggests Victor for Vera\'s salary letter)' },
 ];
 
+/**
+ * The checks that decide who reaches a document, and whether that is on record.
+ * `--important` runs only these (plus the control): about 30 minutes instead of 70.
+ */
+const IMPORTANT = new Set([
+  'control-noop',
+  'authz-no-access-null', 'authz-rank', 'authz-deleted', 'authz-expiry', 'authz-grant-user', 'authz-caller-active',
+  'level-download_version', 'level-upload_version', 'level-update_metadata', 'level-delete', 'level-share',
+  'gate-allowed', 'gate-deny-audit', 'gate-404',
+  'route-patch-level', 'route-grant-level', 'route-revoke-level', 'route-delete-level', 'route-version-download-level', 'route-activity-level',
+  'bind-version', 'bind-grant', 'bind-suggestion', 'list-filter',
+  'upload-role', 'admin-role', 'directory-role', 'transfer-recipient',
+  'deactivate-revoke', 'session-revoked', 'session-active', 'password-change-revoke',
+  'csrf-header', 'csrf-origin',
+  'audit-trigger-update', 'audit-verify-hash', 'audit-verify-truncation',
+  'download-attachment', 'ai-candidates', 'ai-personal-docs',
+]);
+
 const CONTROL_IDS = new Set(['control-noop']); // expected to survive: proves the harness is not just failing everything
 
 function runTests(): { passed: boolean; summary: string } {
@@ -121,7 +139,9 @@ const args = process.argv.slice(2);
 const startIdx = args.indexOf('--start');
 const start = startIdx >= 0 ? args[startIdx + 1] : undefined;
 const filter = args.find((a, i) => !a.startsWith('--') && (startIdx < 0 || i !== startIdx + 1));
-let selected = M.filter((m) => !filter || m.id.includes(filter));
+const important = args.includes('--important');
+let selected = M.filter((m) => (!filter || m.id.includes(filter)) && (!important || IMPORTANT.has(m.id)));
+for (const id of IMPORTANT) if (!M.some((m) => m.id === id)) throw new Error(`IMPORTANT lists unknown mutation ${id}`);
 if (start) {
   const at = selected.findIndex((m) => m.id.startsWith(start));
   selected = at >= 0 ? selected.slice(at) : [];
