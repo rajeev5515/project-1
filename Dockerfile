@@ -3,6 +3,13 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
+FROM node:22-slim AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
 FROM node:22-slim
 ENV NODE_ENV=production \
     TV_DATA_DIR=/data \
@@ -12,7 +19,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY src ./src
 COPY scripts ./scripts
-COPY public ./public
+COPY --from=web /web/dist ./web/dist
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && mkdir -p /data
 # Starts as root only to chown the mounted volume, then drops to "node".

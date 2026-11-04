@@ -25,7 +25,7 @@ import os from 'node:os';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tv-mutate-'));
-for (const entry of ['src', 'test', 'scripts', 'public', 'package.json', 'tsconfig.json']) {
+for (const entry of ['src', 'test', 'scripts', 'package.json', 'tsconfig.json']) {
   fs.cpSync(path.join(repo, entry), path.join(root, entry), { recursive: true });
 }
 fs.symlinkSync(path.join(repo, 'node_modules'), path.join(root, 'node_modules'));
@@ -117,6 +117,8 @@ const M: Mutation[] = [
   { id: 'upload-path-strip', file: 'src/validation.ts', find: "name = name.split(/[\\\\/]/).pop() ?? '';", replace: '', why: 'path components kept in filename' },
   { id: 'ai-candidates', file: 'src/suggest.ts', find: 'WHERE d.owner_id = :ownerId', replace: 'WHERE 1=1', why: "suggestions drawn from other owners' sharing" },
   { id: 'ai-personal-docs', file: 'src/suggest.ts', find: 'AND (SELECT COUNT(*) FROM grants g2 WHERE g2.document_id = d.id) >= 2', replace: '', why: 'personal documents count as evidence (suggests Victor for Vera\'s salary letter)' },
+  { id: 'ai-personal-target', file: 'src/suggest.ts', find: 'if (grantees === 1) {', replace: 'if (false) {', why: "suggests more people for a document that is personal to one person" },
+  { id: 'ai-read-only', file: 'src/suggest.ts', find: "the machine never does.\n      permission: 'read' as const,", replace: "the machine never does.\n      permission: c.editCount > 0 ? ('edit' as const) : ('read' as const),", why: 'suggestions propose edit access' },
 ];
 
 /**
@@ -137,7 +139,7 @@ const IMPORTANT = new Set([
   'preview-types', 'preview-audit',
   'csrf-header', 'csrf-origin',
   'audit-trigger-update', 'audit-verify-hash', 'audit-verify-truncation',
-  'download-attachment', 'ai-candidates', 'ai-personal-docs',
+  'download-attachment', 'ai-candidates', 'ai-personal-docs', 'ai-personal-target', 'ai-read-only',
 ]);
 
 const CONTROL_IDS = new Set(['control-noop']); // expected to survive: proves the harness is not just failing everything

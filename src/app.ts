@@ -41,7 +41,7 @@ export function createApp(ctx: AppContext) {
   app.use((_req, res, next) => {
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; worker-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
     );
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
@@ -71,9 +71,23 @@ export function createApp(ctx: AppContext) {
   app.use('/api/admin', adminRoutes(ctx));
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'not_found', 'No such endpoint')));
 
-  // Static UI. Contains no data; everything comes from the API after sign-in.
-  app.use(express.static(path.join(here, '..', 'public'), { index: 'index.html', dotfiles: 'deny', etag: false }));
-  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(here, '..', 'public', 'index.html')));
+  // Static UI (React build in web/dist). Contains no data; everything comes
+  // from the API after sign-in. Hashed assets can be cached; index.html not.
+  const webRoot = path.join(here, '..', 'web', 'dist');
+  app.use(
+    express.static(webRoot, {
+      index: false,
+      dotfiles: 'deny',
+      etag: false,
+      setHeaders: (res, file) => res.setHeader('Cache-Control', file.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache'),
+    }),
+  );
+  app.get(/^\/(?!api\/).*/, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(webRoot, 'index.html'), (err) => {
+      if (err && !res.headersSent) res.status(503).type('text/plain').send('UI not built. Run: npm run build');
+    });
+  });
 
   // Errors: known errors map to their status; everything else is a 500 with
   // no internals in the body (details go to the server log only).

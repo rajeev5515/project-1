@@ -179,12 +179,14 @@ export function documentRoutes(ctx: AppContext): Router {
     // `access IS NOT NULL` is what removes documents the caller cannot reach.
     const rows = ctx.db
       .prepare(
-        `SELECT a.*, o.name AS owner_name, o.email AS owner_email FROM (${ACCESSIBLE_DOCUMENTS_SQL}) a
+        `SELECT a.*, o.name AS owner_name, o.email AS owner_email, cv.mime_type AS mime_type, cv.filename AS filename
+         FROM (${ACCESSIBLE_DOCUMENTS_SQL}) a
          JOIN users o ON o.id = a.owner_id
+         LEFT JOIN document_versions cv ON cv.id = a.current_version_id AND cv.document_id = a.id
          WHERE a.access IS NOT NULL ${where.map((w) => 'AND ' + w).join(' ')}
          ORDER BY a.updated_at DESC LIMIT :limit OFFSET :offset`,
       )
-      .all(params) as unknown as (DocumentRow & { access: AccessLevel; owner_name: string; owner_email: string })[];
+      .all(params) as unknown as (DocumentRow & { access: AccessLevel; owner_name: string; owner_email: string; mime_type: string | null; filename: string | null })[];
 
     res.json({
       documents: rows.map((d) => ({
@@ -195,6 +197,8 @@ export function documentRoutes(ctx: AppContext): Router {
         updatedAt: d.updated_at,
         createdAt: d.created_at,
         access: d.access,
+        mimeType: d.mime_type,
+        filename: d.filename,
       })),
       limit,
       offset,

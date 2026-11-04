@@ -364,6 +364,24 @@ describe('T22 AI suggestions never widen access', () => {
   });
 });
 
+describe('T22f suggestions never widen a personal document, and never propose edit', () => {
+  test("Vera's salary letter (shared with one person) gets no suggestions, with a reason", async () => {
+    const owner = await login(env, 'olivia');
+    const s = await owner.post(`/api/documents/${env.docs[DOC.veraSalary]}/suggestions`);
+    assert.equal(s.status, 200);
+    assert.deepEqual(s.json.suggestions, []);
+    assert.match(s.json.note, /exactly one person/);
+  });
+
+  test('suggested permission is always read, even for people who usually edit', async () => {
+    const owner = await login(env, 'olivia');
+    const up = await owner.upload('/api/documents', { title: 'HR team rota', category: 'HR' }, { name: 'r.txt', data: 'rota' });
+    const s = await owner.post(`/api/documents/${up.json.document.id}/suggestions`);
+    assert.ok(s.json.suggestions.length > 0);
+    for (const x of s.json.suggestions) assert.equal(x.permission, 'read');
+  });
+});
+
 describe('T22e suggestions ignore personal (single-recipient) documents as evidence', () => {
   test("Victor is not suggested for Vera's salary letter just because he got his own", async () => {
     const owner = await login(env, 'olivia');
