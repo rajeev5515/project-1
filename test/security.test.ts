@@ -411,13 +411,14 @@ describe('T22 AI suggestions never widen access', () => {
   });
 
   test('suggestions never include people the owner has not worked with, inactive users, or the owner', async () => {
+    // Oscar has no HR documents shared with anyone. Olivia does (the handbook, with
+    // Vera and Victor). If candidates were not limited to Oscar's own sharing,
+    // Vera and Victor would be suggested for Oscar's new HR document.
     const owner = await login(env, 'oscar');
-    const up = await owner.upload('/api/documents', { title: 'New contract', category: 'Contracts' }, { name: 'c.txt', data: 'contract' });
+    const up = await owner.upload('/api/documents', { title: 'New HR note', category: 'HR' }, { name: 'c.txt', data: 'hr' });
     const s = await owner.post(`/api/documents/${up.json.document.id}/suggestions`);
-    const ids = s.json.suggestions.map((x: any) => x.userId);
-    assert.ok(!ids.includes(env.ids.oscar));
-    assert.ok(!ids.includes(env.ids.olivia));
-    assert.ok(!ids.includes(env.ids.admin));
+    assert.equal(s.status, 200);
+    assert.deepEqual(s.json.suggestions, [], "Olivia's sharing must not leak into Oscar's suggestions");
   });
 });
 

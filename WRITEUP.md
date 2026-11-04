@@ -29,8 +29,9 @@ request.
 * **AI sharing suggestions.** Claude ranks candidates when an API key is set;
   otherwise a heuristic is used. It never grants. The owner confirms, and
   the suggestion, acceptance and dismissal are each audited.
-* **Tests:** 93 tests. A mutation script removes each of 55 authorisation and
-  audit checks in turn and confirms the suite fails.
+* **Tests:** 94 tests. A mutation script removes authorisation and audit
+  checks one at a time and confirms the suite fails. 43 of 44 run were
+  killed; the one survivor is an equivalent mutant (docs/mutation-results.txt).
 
 ## My permission model, in my own words
 
@@ -81,8 +82,14 @@ In short:
    document got 403 instead of 404, which confirms the document exists.
 4. The multipart parser hung forever on malformed input, because busboy emits
    `error` instead of `close`.
-5. Mutation testing: see PROMPTS.md for which checks the first version of
-   the tests did not actually cover.
+5. **AI feature:** the sharing heuristic suggested Victor for *Vera's salary
+   letter*, because Olivia had shared HR documents (including Victor's own
+   salary letter) with him. Single-recipient documents no longer count as
+   evidence.
+6. **Mutation testing:** one test could not fail (`ai-candidates`), the
+   script was mutating the real working tree, and the "harmless" control
+   mutant was not harmless. In the end, 43 of 44 run mutants were killed; the
+   survivor is equivalent.
 
 The pattern I took from this: the AI writes plausible authorisation code
 quickly, and its own tests pass. The bugs only showed up when the tests were

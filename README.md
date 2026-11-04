@@ -70,9 +70,10 @@ real keys.
 ## Tests
 
 ```bash
-npm test            # 93 tests: isolation, revocation, audit, uploads, CSRF, sessions, AI boundary
+npm test            # 94 tests: isolation, revocation, audit, uploads, CSRF, sessions, AI boundary
 npm run typecheck
 npm run mutate      # removes each authorisation/audit check in turn; the suite must fail for each
+npm run mutate -- --important   # only the 41 checks that decide access or evidence (~30 min)
 npm run verify-audit [-- <seq> <hash>]   # offline chain verification
 ```
 

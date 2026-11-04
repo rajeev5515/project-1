@@ -154,6 +154,18 @@ Seven test files fail when that happens (mutation `gate-allowed`).
 
 ## Mutation results
 
-`npm run mutate` applies 55 mutations. The output of the last run is in
-`docs/mutation-results.txt`. Mutants that survived, and why, are listed there
-and summarised in WRITEUP.md.
+`npm run mutate` defines 56 mutations (`--important` runs the 41 that decide
+access or evidence). Full results are in `docs/mutation-results.txt`:
+
+* **43 killed.** Every check in `authz.ts`, every route gate, every id
+  binding, the search filter, role checks, session revocation, CSRF, audit
+  triggers, chain verification and the AI candidate rules.
+* **1 survivor, `level-restore`, which is an equivalent mutant.** The
+  deleted-document rule refuses non-owners first, so the restore level never
+  decides anything.
+* **1 real gap, found and fixed:** `ai-candidates` survived because its test
+  could not fail. The test was rewritten and the mutant is now killed
+  (PROMPTS Entry 6).
+* **11 lower-impact mutants were not run** in the final pass (idle and
+  absolute session expiry, lockout, upload magic bytes, and others). Each has
+  a direct test, but its mutant has not been run.

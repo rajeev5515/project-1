@@ -173,3 +173,67 @@ The failure was in the *quality* of the advice, and it only showed up by
 looking at real data in the real UI.
 
 Commit: [8b7e2f7](https://github.com/rajeev5515/project-1/commit/8b7e2f7)
+
+---
+
+## Entry 6 — 2026-11-04 — Do the tests actually test the authorisation checks? (mutation testing)
+
+**Asked:** "Write a script that removes each authorisation and audit check
+one at a time, runs the suite, and reports any check whose removal leaves the
+tests green." The brief says the judges will do this by hand.
+
+**Produced:** `scripts/mutation-check.ts` with 55 string mutations. The first
+version had three problems.
+
+**What was wrong:**
+1. **It mutated the real working tree.** While it ran, `git status` showed a
+   weakened `src/authz.ts`; a commit at that moment would have shipped a
+   security hole. (The repo's stop hook kept asking me to commit exactly that
+   file.)
+2. **The "control" mutant was not a no-op.** It was meant to prove the harness
+   does not just fail everything: changing `gate(req,'download')` to
+   `gate(req,'view')`, the same required level. But a denied download is then
+   audited as `document.view` instead of `document.download`, and an audit
+   test caught it. The AI had reasoned only about the access level, not about
+   the action name written to the evidence.
+3. **Two mutants survived:**
+   * `ai-candidates`: remove the "only this owner's sharing" filter from the
+     suggestion query, and the tests still passed. The test that was meant to
+     cover it ("suggestions never include people the owner has not worked
+     with") used the Contracts category, where no other owner had shared
+     anything, so the result was empty either way. **The test could not fail.**
+   * `level-restore`: weakening `restore` from `owner` to `read` changes
+     nothing. This is an equivalent mutant, not a gap: since Entry 3,
+     non-owners are refused on deleted documents before the level check.
+
+**What I did instead:**
+* The script copies `src/`, `test/` and the rest to a temp directory and
+  mutates only there. The working tree is never touched.
+* The control is now a cosmetic message change, and it survives as it should.
+* The suggestion test now uses HR, where Olivia has shared with Vera and
+  Victor, and asserts that Oscar gets *no* suggestions for his new HR document.
+  `ai-candidates` is now killed.
+* `level-restore` is documented as equivalent in `docs/mutation-results.txt`.
+* Final tally: 43 killed, 1 equivalent survivor, 11 lower-impact mutants not
+  run in the "important" pass (listed in the results file).
+
+Commit: see `git log -- scripts/mutation-check.ts test/security.test.ts` (this entry's commit).
+
+---
+
+## Reused context across the week
+
+* **`CLAUDE.md`** (repository root) is loaded into every AI session. It holds
+  the rules learned the hard way: one authorisation function and no duplicate
+  checks (Entry 1); bind child ids to the gated document; 404 not 403 for
+  no access (Entry 3); the audit row goes in the same transaction; no
+  permission caching; AI suggests and never grants (Entry 5); no
+  `innerHTML`.
+* **The reviewer prompt** at the end of `CLAUDE.md` ("review this diff as an
+  attacker with a low-privilege account… name one test that would fail if the
+  check were deleted") is run on every change to routes or `authz.ts`.
+* **The attacker-first test pattern**: `allDocumentRoutes()` in
+  `test/isolation.test.ts` lists every document route. New routes are added
+  there, so every stranger × every route is tested automatically. Entries 3
+  and 6 both came from tests written from the attacker's side, not the
+  feature's.
