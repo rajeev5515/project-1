@@ -217,7 +217,7 @@ version had three problems.
 * Final tally: 43 killed, 1 equivalent survivor, 11 lower-impact mutants not
   run in the "important" pass (listed in the results file).
 
-Commit: see `git log -- scripts/mutation-check.ts test/security.test.ts` (this entry's commit).
+Commits: [f9a23a7](https://github.com/rajeev5515/project-1/commit/f9a23a7) (temp copy, real control), [f4c3406](https://github.com/rajeev5515/project-1/commit/f4c3406) (test gap closed, results).
 
 ---
 
