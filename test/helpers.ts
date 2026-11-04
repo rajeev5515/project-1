@@ -14,9 +14,11 @@ export interface TestEnv {
   base: string;
   heads: { seq: number; hash: string }[];
   close: () => Promise<void>;
-  ids: Record<string, string>;
-  docs: Record<string, string>;
+  ids: Record<UserKey, string>;
+  docs: Record<DocTitle, string>;
 }
+
+export type UserKey = 'admin' | 'olivia' | 'oscar' | 'vera' | 'victor' | 'pat';
 
 /** Fresh database, seeded with the demo users (all with PASSWORD) and documents. */
 export async function startEnv(overrides: Parameters<typeof createContext>[0] = {}): Promise<TestEnv> {
@@ -29,12 +31,12 @@ export async function startEnv(overrides: Parameters<typeof createContext>[0] = 
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
   const port = (server.address() as AddressInfo).port;
-  const ids: Record<string, string> = {};
+  const ids = {} as Record<UserKey, string>;
   for (const u of DEMO_USERS) {
-    ids[u.email.split('@')[0]!] = (ctx.db.prepare('SELECT id FROM users WHERE email = ?').get(u.email) as { id: string }).id;
+    ids[u.email.split('@')[0] as UserKey] = (ctx.db.prepare('SELECT id FROM users WHERE email = ?').get(u.email) as { id: string }).id;
   }
-  const docs: Record<string, string> = {};
-  for (const row of ctx.db.prepare('SELECT id, title FROM documents').all() as { id: string; title: string }[]) {
+  const docs = {} as Record<DocTitle, string>;
+  for (const row of ctx.db.prepare('SELECT id, title FROM documents').all() as { id: string; title: DocTitle }[]) {
     docs[row.title] = row.id;
   }
   return {
@@ -57,7 +59,8 @@ export const DOC = {
   handbook: 'HR policy handbook',
   msa: 'Master services agreement - Partner Co',
   memo: 'Board litigation memo',
-};
+} as const;
+export type DocTitle = (typeof DOC)[keyof typeof DOC];
 
 export interface Res {
   status: number;
@@ -111,12 +114,12 @@ export class Client {
   upload(url: string, fields: Record<string, string>, file?: { name: string; data: Buffer | string }) {
     const form = new FormData();
     for (const [k, v] of Object.entries(fields)) form.append(k, v);
-    if (file) form.append('file', new Blob([file.data]), file.name);
+    if (file) form.append('file', new Blob([typeof file.data === 'string' ? file.data : new Uint8Array(file.data)]), file.name);
     return this.req('POST', url, { form });
   }
 }
 
-export async function login(env: TestEnv, who: string, password = PASSWORD): Promise<Client> {
+export async function login(env: TestEnv, who: UserKey, password = PASSWORD): Promise<Client> {
   const c = new Client(env.base);
   const email = DEMO_USERS.find((u) => u.email.startsWith(who + '@'))!.email;
   const r = await c.post('/api/auth/login', { email, password });

@@ -43,7 +43,7 @@ async function call(c: Client, [method, url, body]: readonly [string, string, un
 }
 
 describe('T01 IDOR: a stranger gets nothing from any document route', () => {
-  for (const who of ['oscar', 'victor', 'pat', 'admin']) {
+  for (const who of ['oscar', 'victor', 'pat', 'admin'] as const) {
     test(`${who} cannot reach Vera's salary letter through any route`, async () => {
       const c = await login(env, who);
       const docId = env.docs[DOC.veraSalary]!;
@@ -260,7 +260,7 @@ describe('T11 role checks', () => {
   });
 
   test('non-admins cannot call any admin endpoint', async () => {
-    for (const who of ['olivia', 'vera']) {
+    for (const who of ['olivia', 'vera'] as const) {
       const c = await login(env, who);
       for (const [m, u] of [
         ['GET', '/api/admin/users'],

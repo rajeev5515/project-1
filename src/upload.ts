@@ -61,8 +61,21 @@ export function parseUpload(req: Request, maxBytes: number): Promise<ParsedUploa
     bb.on('filesLimit', () => fail(new HttpError(400, 'too_many_files', 'Only one file per upload')));
     bb.on('fieldsLimit', () => fail(new HttpError(400, 'too_many_fields', 'Too many form fields')));
     bb.on('partsLimit', () => fail(new HttpError(400, 'too_many_parts', 'Too many form parts')));
-    bb.on('error', () => fail(new HttpError(400, 'bad_multipart', 'Malformed multipart request')));
-    bb.on('close', () => (failed ? reject(failed) : resolve({ fields, file })));
+    // busboy emits 'error' INSTEAD of 'close' on malformed input, so the
+    // promise must settle here too, or the request hangs forever.
+    let settled = false;
+    const settle = (err: HttpError | null) => {
+      if (settled) return;
+      settled = true;
+      req.unpipe(bb);
+      if (err) {
+        req.resume(); // drain whatever the client is still sending
+        reject(err);
+      } else resolve({ fields, file });
+    };
+    bb.on('error', () => settle(failed ?? new HttpError(400, 'bad_multipart', 'Malformed multipart request')));
+    bb.on('close', () => settle(failed));
+    req.on('aborted', () => settle(new HttpError(400, 'aborted', 'Upload aborted')));
     req.pipe(bb);
   });
 }
