@@ -8,17 +8,27 @@
  * and expects it to FAIL. A mutation that survives (tests still pass) is a
  * hole in the tests and is reported.
  *
- *   npm run mutate              # all mutations
- *   npm run mutate -- share     # only mutations whose id contains "share"
+ *   npm run mutate                     # all mutations
+ *   npm run mutate -- share            # only mutations whose id contains "share"
+ *   npm run mutate -- --start bind-    # resume from the first id starting with "bind-"
  *
- * Files are always restored, including on Ctrl-C.
+ * Mutations are applied to a throwaway copy of the repository in the OS temp
+ * directory, never to the working tree, so a weakened check can never be
+ * committed by accident.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+import os from 'node:os';
+
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tv-mutate-'));
+for (const entry of ['src', 'test', 'scripts', 'public', 'package.json', 'tsconfig.json']) {
+  fs.cpSync(path.join(repo, entry), path.join(root, entry), { recursive: true });
+}
+fs.symlinkSync(path.join(repo, 'node_modules'), path.join(root, 'node_modules'));
 
 interface Mutation {
   id: string;
@@ -53,7 +63,7 @@ const M: Mutation[] = [
   { id: 'route-grant-level', file: 'src/routes/documents.ts', find: "  r.post('/:id/grants', (req, res) => {\n    const { doc } = gate(req, 'share');", replace: "  r.post('/:id/grants', (req, res) => {\n    const { doc } = gate(req, 'view');", why: 'readers grant access' },
   { id: 'route-revoke-level', file: 'src/routes/documents.ts', find: "  r.delete('/:id/grants/:grantId', (req, res) => {\n    const { doc } = gate(req, 'share');", replace: "  r.delete('/:id/grants/:grantId', (req, res) => {\n    const { doc } = gate(req, 'view');", why: 'readers revoke access' },
   { id: 'route-delete-level', file: 'src/routes/documents.ts', find: "gate(req, 'delete')", replace: "gate(req, 'view')", why: 'readers delete' },
-  { id: 'control-same-level', file: 'src/routes/documents.ts', find: "const { doc } = gate(req, 'download');", replace: "const { doc } = gate(req, 'view');", why: 'CONTROL: same required level, not a weakening; tests should still pass' },
+  { id: 'control-noop', file: 'src/app.ts', find: "message: 'Something went wrong'", replace: "message: 'Something went wrong.'", why: 'CONTROL: cosmetic change; tests must still pass (proves the harness does not fail everything)' },
   { id: 'route-version-download-level', file: 'src/routes/documents.ts', find: "gate(req, 'download_version')", replace: "gate(req, 'download')", why: 'readers download old versions' },
   { id: 'route-activity-level', file: 'src/routes/documents.ts', find: "gate(req, 'view_activity')", replace: "gate(req, 'view')", why: 'readers see the access log' },
   { id: 'route-suggest-level', file: 'src/routes/documents.ts', find: "  r.post('/:id/suggestions', async (req, res) => {\n    const { doc } = gate(req, 'share');", replace: "  r.post('/:id/suggestions', async (req, res) => {\n    const { doc } = gate(req, 'view');", why: 'readers trigger suggestions' },
@@ -91,7 +101,7 @@ const M: Mutation[] = [
   { id: 'ai-candidates', file: 'src/suggest.ts', find: 'WHERE d.owner_id = :ownerId', replace: 'WHERE 1=1', why: "suggestions drawn from other owners' sharing" },
 ];
 
-const CONTROL_IDS = new Set(['control-same-level']); // expected to survive: proves the harness is not just failing everything
+const CONTROL_IDS = new Set(['control-noop']); // expected to survive: proves the harness is not just failing everything
 
 function runTests(): { passed: boolean; summary: string } {
   const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', '--test', '--test-concurrency=1', ...fs.readdirSync(path.join(root, 'test')).filter((f) => f.endsWith('.test.ts')).map((f) => path.join('test', f))], {
@@ -106,16 +116,22 @@ function runTests(): { passed: boolean; summary: string } {
   return { passed: r.status === 0, summary: `pass ${pass}, fail ${fail}` };
 }
 
-const filter = process.argv[2];
-const selected = M.filter((m) => !filter || m.id.includes(filter));
-const originals = new Map<string, string>();
-const restoreAll = () => {
-  for (const [f, s] of originals) fs.writeFileSync(path.join(root, f), s);
-};
+const args = process.argv.slice(2);
+const startIdx = args.indexOf('--start');
+const start = startIdx >= 0 ? args[startIdx + 1] : undefined;
+const filter = args.find((a, i) => !a.startsWith('--') && (startIdx < 0 || i !== startIdx + 1));
+let selected = M.filter((m) => !filter || m.id.includes(filter));
+if (start) {
+  const at = selected.findIndex((m) => m.id.startsWith(start));
+  selected = at >= 0 ? selected.slice(at) : [];
+}
+const cleanup = () => fs.rmSync(root, { recursive: true, force: true });
 process.on('SIGINT', () => {
-  restoreAll();
+  cleanup();
   process.exit(130);
 });
+process.on('exit', cleanup);
+console.log(`Working copy: ${root}`);
 
 console.log(`Baseline: running tests on unmodified code...`);
 const baseline = runTests();
@@ -130,7 +146,6 @@ let killed = 0;
 for (const m of selected) {
   const file = path.join(root, m.file);
   const src = fs.readFileSync(file, 'utf8');
-  originals.set(m.file, originals.get(m.file) ?? src);
   const count = src.split(m.find).length - 1;
   if (count !== 1) {
     console.log(`?? ${m.id}: pattern found ${count} times in ${m.file} — mutation is stale, update it`);
@@ -152,7 +167,6 @@ for (const m of selected) {
     fs.writeFileSync(file, src);
   }
 }
-restoreAll();
 console.log(`\n${killed}/${selected.length} mutations behaved as expected.`);
 if (survivors.length) {
   console.log('Not caught by the tests:');
