@@ -1,0 +1,29 @@
+{
+  "name": "trustvault",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TrustVault - confidential document sharing where the server decides every access and can prove who reached what.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.ts",
+    "seed": "node --disable-warning=ExperimentalWarning scripts/seed.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 test/",
+    "typecheck": "tsc --noEmit",
+    "mutate": "node --disable-warning=ExperimentalWarning scripts/mutation-check.ts",
+    "verify-audit": "node --disable-warning=ExperimentalWarning scripts/verify-audit.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
+    "busboy": "^1.6.0",
+    "express": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/busboy": "^1.5.5",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  }
+}
