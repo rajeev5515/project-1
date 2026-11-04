@@ -1,0 +1,37 @@
+# Fly.io config. Before the first deploy:
+#   fly launch --no-deploy --copy-config
+#   fly volumes create trustvault_data --size 1
+#   fly secrets set TV_MASTER_KEY=$(openssl rand -hex 32) TV_AUDIT_KEY=$(openssl rand -hex 32) \
+#                   TV_PUBLIC_ORIGIN=https://<app>.fly.dev
+#   fly deploy
+app = "trustvault"
+primary_region = "lhr"
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  TV_DATA_DIR = "/data"
+  TV_TRUST_PROXY = "1"
+  TV_AUTO_SEED = "1"
+  PORT = "8080"
+
+[[mounts]]
+  source = "trustvault_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  # Exactly one machine: rate limiting is in memory and SQLite is single-writer.
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 50
+
+[[http_service.checks]]
+  path = "/healthz"
+  interval = "30s"
+  timeout = "3s"

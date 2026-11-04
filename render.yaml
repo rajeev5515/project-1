@@ -1,0 +1,29 @@
+# Render blueprint: https://render.com/docs/blueprint-spec
+# A persistent disk is required: the SQLite database and encrypted blobs live in /data.
+services:
+  - type: web
+    name: trustvault
+    runtime: docker
+    plan: starter
+    healthCheckPath: /healthz
+    disk:
+      name: trustvault-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TV_DATA_DIR
+        value: /data
+      - key: TV_TRUST_PROXY
+        value: "1"
+      - key: TV_AUTO_SEED
+        value: "1"
+      # Generate each with: openssl rand -hex 32   (they must differ)
+      - key: TV_MASTER_KEY
+        sync: false
+      - key: TV_AUDIT_KEY
+        sync: false
+      # e.g. https://trustvault.onrender.com
+      - key: TV_PUBLIC_ORIGIN
+        sync: false
