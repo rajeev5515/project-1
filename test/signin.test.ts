@@ -139,6 +139,22 @@ describe('T15 sign-up and sign-in by emailed code', () => {
     }
   });
 
+  test('a code issued before deactivation does not work after it', async () => {
+    const c = new Client(env.base);
+    const s = await start(c, 'alice@acme.test');
+    await settle();
+    const code = env.mail.lastCodeFor('alice@acme.test')!;
+    const id = (env.ctx.db.prepare("SELECT id FROM users WHERE email = 'alice@acme.test'").get() as any).id;
+    env.ctx.db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(id);
+    try {
+      const r = await verify(c, s.json.challengeId, code);
+      assert.equal(r.status, 401);
+      assert.equal(r.headers.getSetCookie().length, 0, 'no session cookie issued');
+    } finally {
+      env.ctx.db.prepare('UPDATE users SET active = 1 WHERE id = ?').run(id);
+    }
+  });
+
   test('without email configured, real accounts get a clear 503 and demo accounts still work', async () => {
     const { UnconfiguredMailer } = await import('../src/mailer.ts');
     const saved = env.ctx.mailer;
@@ -177,6 +193,11 @@ describe('T60 demo world wall: public demo accounts can never reach real people'
   });
 
   test('the demo admin cannot see, change, or move real users or their activity', async () => {
+    // Give the real world a grant so there is something to leak.
+    const alice = await emailLogin(env, 'alice@acme.test');
+    const docs = (await alice.get('/api/documents?scope=mine')).json.documents;
+    const g = await alice.post(`/api/documents/${docs[0].id}/grants`, { email: 'boss@acme.test', permission: 'read' });
+    assert.equal(g.status, 201);
     const admin = await login(env, 'admin');
     const users = (await admin.get('/api/admin/users')).json.users;
     assert.ok(users.every((u: any) => u.isDemo), 'only demo users listed');
