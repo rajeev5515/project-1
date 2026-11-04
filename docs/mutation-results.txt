@@ -87,3 +87,17 @@ Not run in the important pass (lower impact; run with npm run mutate -- <id>):
   - audit-sink
   - upload-magic
   - upload-path-strip
+
+Update — React rebuild with email-code sign-in (same day)
+--------------------------------------------------------
+Removed (code no longer exists): password-change-gate, password-change-revoke, lockout.
+New mutants, run with: npm run mutate -- --important --start otp-   and   npm run mutate -- ai-
+KILLED    otp-attempts, otp-expiry, otp-single-use, otp-compare, otp-demo-only-display, otp-rate-email
+KILLED    otp-inactive            (SURVIVED first; test added: code issued before deactivation)
+KILLED    world-grant, world-directory, world-admin-users, world-admin-list, world-admin-audit,
+          world-transfer, world-demo-invite
+KILLED    world-admin-grants      (SURVIVED first; test now creates a real grant to leak)
+KILLED    preview-types, preview-audit
+KILLED    audit-trigger-update, audit-verify-hash, audit-verify-truncation (re-run, still killed)
+KILLED    ai-candidates, ai-personal-docs, ai-personal-target, ai-read-only
+Suite size at this point: 111 tests.

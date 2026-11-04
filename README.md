@@ -4,17 +4,22 @@ Confidential document sharing where **the wrong person cannot reach a
 document**, and where you can **prove who reached it**, including the
 attempts that were refused.
 
-* Per-document grants (`read` / `edit`) to named people, optionally
-  time-limited. Every request is checked on the server; nothing is cached, so
-  revocation takes effect on the next request.
-* Files are encrypted at rest (AES-256-GCM, a fresh key per version, wrapped by
-  a master key) and are only ever served as attachments after the check.
-* A tamper-evident audit trail: append-only in the database, HMAC hash-chained,
-  with the chain head mirrored to the platform log stream.
-* An admin console with alerts (access probing, password spraying, bulk
-  downloads, privileged changes, broken audit chain).
-* Optional AI suggestions of who to share with. They never grant anything on
-  their own; the owner confirms, and both steps are audited.
+* **Sign up and sign in with your email.** There are no passwords: a
+  6-digit one-time code is emailed (through Resend), valid for 10 minutes and
+  usable once.
+* **Upload your own files** by drag and drop (PDF, images, Word, Excel,
+  PowerPoint, text, CSV; up to 20 MB). The type is checked from the content.
+  Files are encrypted at rest (AES-256-GCM, a fresh key per version).
+* **Read files in the app.** PDFs, images and text open in a viewer that can't
+  run anything in the file. Download is always available.
+* **Share per document, per person**: *Can view* or *Can edit* (edit = new
+  versions and details), optionally until a date. Revoking works on the
+  person's very next click.
+* **Prove who reached it:** every view, preview, download, change, permission
+  change and *refused attempt* is in an append-only, HMAC hash-chained audit
+  trail. Owners see it per document; admins see everything, with alerts.
+* **AI sharing suggestions** that never grant anything on their own.
+* React + Tailwind UI with dark mode and a phone layout.
 
 | Document | What is in it |
 |---|---|
@@ -28,24 +33,32 @@ attempts that were refused.
 
 ## Live demo
 
-**URL:** _not deployed yet. See "Deploy" below. Fill this in after the first
-deploy._
+**URL:** https://project-1-kxxnvq.fly.dev
 
-Seeded accounts (created automatically when `TV_AUTO_SEED=1`):
+**Real accounts:** click *Create account*, enter your name and email, then
+type the code from your inbox. You become an **owner**: you can upload and
+share. (Admins are the addresses listed in `TV_ADMIN_EMAILS`.)
 
-| Role | Email | Password | What they have |
-|---|---|---|---|
-| admin | `admin@trustvault.demo` | `Admin-Demo-2026!` | User management and audit. **No document access.** |
-| owner | `olivia@trustvault.demo` | `Owner-Demo-2026!` | Owns 2 salary letters and the HR handbook |
-| owner | `oscar@trustvault.demo` | `Owner-Demo-2026!` | Owns a partner contract and an unshared litigation memo |
-| viewer | `vera@trustvault.demo` | `Viewer-Demo-2026!` | Read: her own salary letter and the handbook |
-| viewer | `victor@trustvault.demo` | `Viewer-Demo-2026!` | Read: his own salary letter. Edit: the handbook |
-| viewer (external) | `pat@partner.example` | `Viewer-Demo-2026!` | Read: the partner contract only |
+**Demo accounts** (seeded with `TV_AUTO_SEED=1`) are one click on the sign-in
+page. They can't receive email, so **their code is shown on screen**. They
+live in a separate demo world that can never see, share with or administer
+real accounts (THREATS T60).
+
+| Role | Email | What they have |
+|---|---|---|
+| admin | `admin@trustvault.demo` | User management and audit of the demo world. **No document access.** |
+| owner | `olivia@trustvault.demo` | Owns 2 salary letters and the HR handbook |
+| owner | `oscar@trustvault.demo` | Owns a partner contract and an unshared litigation memo |
+| viewer | `vera@trustvault.demo` | Can view: her own salary letter and the handbook |
+| viewer | `victor@trustvault.demo` | Can view: his own salary letter. Can edit: the handbook |
+| viewer (external) | `pat@partner.example` | Can view: the partner contract only |
 
 Things to try:
 
-* Sign in as Vera, then open Victor's salary letter by id. You get 404, and
-  Olivia's activity log shows the refusal.
+* Create your own account with your email, upload a file, and share it.
+  Notice that you can't share with the demo accounts, and they can't see you.
+* Sign in as Vera, then open Victor's salary letter by its URL. You get 404,
+  and Olivia's *Activity* tab shows the refusal.
 * As Olivia, revoke Vera's grant while Vera has the document open. Vera's
   next click fails.
 * As admin, open *Admin → Alerts*, then *Audit*. Try to download any document
@@ -53,15 +66,20 @@ Things to try:
 
 ## Run locally
 
-Requires **Node.js 22.18 or later**. It runs TypeScript directly; there is no
-build step.
+Requires **Node.js 22.18 or later**. The server runs TypeScript directly; the
+React UI in `web/` is built once with Vite.
 
 ```bash
 git clone <this repo> && cd trustvault
 npm ci
+npm run build       # builds the React UI into web/dist
 npm run seed        # creates ./data with demo users and documents
 npm start           # http://localhost:3000
 ```
+
+Without `RESEND_API_KEY`, development prints sign-in codes to the server log
+(`{"type":"dev_mail",...}`). Production never does this. For UI work, run
+`npm start` and `npm run dev:web` (Vite on :5173, proxying /api).
 
 In development, fixed keys derived from a constant are used. Never use them in
 production. With `NODE_ENV=production` the server refuses to start without
@@ -70,7 +88,7 @@ real keys.
 ## Tests
 
 ```bash
-npm test            # 94 tests: isolation, revocation, audit, uploads, CSRF, sessions, AI boundary
+npm test            # 111 tests: isolation, revocation, sign-in codes, demo wall, preview, audit, uploads, CSRF, AI boundary
 npm run typecheck
 npm run mutate      # removes each authorisation/audit check in turn; the suite must fail for each
 npm run mutate -- --important   # only the 41 checks that decide access or evidence (~30 min)
@@ -89,8 +107,11 @@ Test names carry the THREATS.md id they cover, for example `T07`.
 | `TV_DATA_DIR` | | Database and blobs. Default `./data`. Must be persistent storage. |
 | `TV_PUBLIC_ORIGIN` | recommended | For example `https://trustvault.example.com`. Used for the Origin check. |
 | `TV_TRUST_PROXY` | | `1` only when behind exactly one trusted proxy (Render, Fly). Without it, client IPs come from the socket. |
+| `RESEND_API_KEY` | prod, for real users | Resend API key, used to email sign-in codes. Without it, only demo accounts can sign in. |
+| `TV_EMAIL_FROM` | with Resend | Sender, e.g. `TrustVault <login@yourdomain.com>`. Default `onboarding@resend.dev`, Resend's test sender, which **only delivers to your own Resend account's address** until you verify a domain. |
+| `TV_ADMIN_EMAILS` | | Comma-separated addresses that become **admin** when they sign up. |
+| `TV_SIGNUP_DOMAINS` | | Comma-separated domains allowed to sign up, e.g. `acme.com`. Empty means anyone. |
 | `TV_AUTO_SEED` | | `1` seeds demo data on first start (an empty database only). |
-| `TV_SEED_PASSWORD` | | Overrides every demo password. |
 | `ANTHROPIC_API_KEY` | | Enables Claude-ranked sharing suggestions. Without it, a local heuristic is used. |
 | `TV_AI_MODEL` | | Default `claude-opus-5-5`. |
 | `PORT` | | Default 3000. |
@@ -113,6 +134,7 @@ prompted.
 fly launch --no-deploy --copy-config
 fly volumes create trustvault_data --size 1
 fly secrets set TV_MASTER_KEY=$(openssl rand -hex 32) TV_AUDIT_KEY=$(openssl rand -hex 32) TV_PUBLIC_ORIGIN=https://<app>.fly.dev
+fly secrets set RESEND_API_KEY=re_xxx TV_EMAIL_FROM='TrustVault <login@yourdomain.com>' TV_ADMIN_EMAILS=you@yourdomain.com
 fly deploy
 ```
 
@@ -147,31 +169,34 @@ src/
   authz.ts          the authorisation decision (read this first)
   routes/documents.ts  gate() + every document route
   routes/admin.ts   admin, directory, alerts
-  routes/auth.ts    login, logout, password change
+  routes/auth.ts    email-code sign-up / sign-in, logout
   auth.ts           sessions, CSRF, role checks, rate limiter
   audit.ts          hash-chained audit log
-  crypto.ts         scrypt, tokens, envelope encryption
+  crypto.ts         tokens, envelope encryption
+  mailer.ts         Resend / dev-log / test mailers
   storage.ts        encrypted blob store
   validation.ts     upload and input validation
   suggest.ts        AI / heuristic sharing suggestions
   db.ts             schema
-public/             UI (vanilla JS, no innerHTML, CSP script-src 'self')
+web/                React + Tailwind UI (Vite), built to web/dist and served by the server
 test/               node:test suites
 scripts/            seed, mutation check, audit verify
 ```
 
 ## Stack, and why
 
-Node 22 + TypeScript (native type stripping) + Express 5 + SQLite
-(`node:sqlite`), and plain JavaScript in the browser.
+**Server:** Node 22 + TypeScript (native type stripping) + Express 5 + SQLite
+(`node:sqlite`). **UI:** React 19 + Tailwind 4 + Vite, with pdf.js for previews.
 
-* **Few moving parts I can explain line by line.** There are three runtime
-  dependencies. Every security property is in code in this repository, not in
-  framework configuration.
+* **Every security decision is on the server**, in code in this repository:
+  `src/authz.ts` for access, `src/routes/auth.ts` for sign-in, `src/audit.ts`
+  for evidence. The React app only hides buttons; removing that code changes
+  nothing about what a user can reach.
 * **SQLite** makes the audit append and the action it records one
   transaction. Writes are serialised, so the hash chain cannot fork. The cost
   is one instance only; Postgres (with row-level security as a second layer)
   is the next step.
-* **No front-end framework**, so the CSP can be strict (`script-src 'self'`,
-  no inline code) and the rule "never `innerHTML`" can be checked with
-  `grep`.
+* **The CSP stays strict with React:** `script-src 'self'`, no inline code, no
+  `dangerouslySetInnerHTML` anywhere (checkable with `grep`). The only
+  additions are `img-src blob:` for image previews and `worker-src 'self'`
+  for the bundled pdf.js worker.

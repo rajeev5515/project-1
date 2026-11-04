@@ -18,21 +18,23 @@ Base path `/api`. JSON in and out, except uploads (multipart) and downloads
   deliberately indistinguishable.
 * Unknown body fields are rejected with `400 validation` (no mass
   assignment).
-* All responses are `Cache-Control: no-store`.
+* All API responses are `Cache-Control: no-store`.
+* **Demo world:** a demo account (`isDemo: true`) can only share with, see in
+  the directory, or administer other demo accounts. A demo admin's audit,
+  alerts, stats and grant views are filtered to the demo world.
 * "Access" below means the caller's level on *that document* (`read`, `edit`
   or `owner`; see PERMISSIONS.md). "Role" means the account type.
 
-## Auth
+## Auth (passwordless, emailed one-time code)
 
-| Method & path | Who may call | Body / query | Notes |
+| Method & path | Who may call | Body | Notes |
 |---|---|---|---|
-| `POST /auth/login` | anyone | `{email, password}` | Same 401 for every failure. 5 failures lock the account for 15 minutes. 20 failures per IP per 15 minutes gives 429. Audited. |
+| `POST /auth/start` | anyone | `{email}` | Always `200 {challengeId, message}`. If the address belongs to an active account, a 6-digit code is emailed. Demo accounts get `demoCode` in the response instead. Limits: 5 requests per address and 30 per IP per 15 minutes (then 429). `503 email_unavailable` if the server has no email configured; this is the same for every non-demo address. |
+| `POST /auth/signup` | anyone | `{email, name}` | Same response shape as `/start`. A new address gets a sign-up code; the account is created on verify with role **owner** (or admin if listed in `TV_ADMIN_EMAILS`). An existing address gets a normal sign-in code in its own inbox, and nothing is created or changed. `TV_SIGNUP_DOMAINS` can restrict the allowed domains (400 otherwise). |
+| `POST /auth/verify` | anyone | `{challengeId, code}` | Correct, unexpired, unused code for an active account → session cookie + `{user}`. Otherwise `401 bad_code`. 5 wrong codes kill the challenge. |
 | `POST /auth/logout` | signed in | — | Revokes this session on the server. |
-| `GET /auth/me` | signed in | — | `{user:{id,email,name,role,mustChangePassword}}` |
-| `POST /auth/password` | signed in (allowed even while `mustChangePassword`) | `{currentPassword, newPassword}` | At least 12 characters. Ends all your *other* sessions. |
-
-While `mustChangePassword` is true, every other endpoint returns
-`403 password_change_required`.
+| `GET /auth/me` | signed in | — | `{user:{id,email,name,role,isDemo}}` |
+| `GET /auth/config` | anyone | — | `{emailEnabled, signupDomains}` for the sign-in page. |
 
 ## Documents
 
@@ -44,6 +46,7 @@ While `mustChangePassword` is true, every other endpoint returns
 | `GET /documents/trash` | **role owner** | — | Your own deleted documents. |
 | `GET /documents/:id` | access ≥ read | — | Metadata, your access, `allowedActions`, current version. Audited as `document.view`. |
 | `GET /documents/:id/download` | access ≥ read | — | Current version, as an `application/octet-stream` attachment. Audited. |
+| `GET /documents/:id/preview` | access ≥ read | — | Same bytes and headers as download, plus `X-TrustVault-Mime`. Only for PDF, PNG, JPEG, TXT and CSV (otherwise 415). Audited as `document.preview`. The client renders it without executing anything. |
 | `GET /documents/:id/versions` | access ≥ edit | — | Version history. |
 | `GET /documents/:id/versions/:versionId/download` | access ≥ edit | — | The version must belong to `:id`. Audited. |
 | `POST /documents/:id/versions` | access ≥ edit | multipart: `file` | Becomes the current version. Access is checked before reading the body and again before saving. |
@@ -62,22 +65,21 @@ While `mustChangePassword` is true, every other endpoint returns
 | `GET /documents/:id/activity` | access = owner | — | The last 500 audit events for this document, including refused attempts. |
 | `POST /documents/:id/suggestions` | access = owner | — | Returns `{suggestionId, source, suggestions[], appliesAutomatically:false}`. **Creates no grants.** Audited as `ai.suggestion.generated`. |
 | `POST /documents/:id/suggestions/:sid/dismiss` | access = owner | `{userId?}` | Audited as `ai.suggestion.dismissed`. |
-| `GET /users/directory?q=` | **role owner or admin** | `q` at least 2 characters | Up to 10 active users `{id,name,email,role}`, so owners can pick who to share with. |
+| `GET /users/directory?q=` | **role owner or admin** | `q` at least 2 characters | Up to 10 active users **in the caller's world** (demo or real) `{id,name,email,role}`. |
 
 ## Administration (all require role admin)
 
 | Method & path | Body / query | Notes |
 |---|---|---|
 | `GET /admin/users` | — | All users, with the number of documents each owns. |
-| `POST /admin/users` | `{email, name, role, password}` | The new user must change the password at first sign-in. |
+| `POST /admin/users` | `{email, name, role}` | Invite: the person signs in with an emailed code. Not available to the demo admin (403). |
 | `PATCH /admin/users/:id` | `{role?, active?, name?}` | Deactivation and role changes end all of that user's sessions. You cannot change your own role or deactivate yourself, and the last admin cannot be removed. |
-| `POST /admin/users/:id/reset-password` | — | Returns `{temporaryPassword}` once. Ends sessions and forces a change. Raises an alert. |
 | `POST /admin/users/:id/revoke-sessions` | — | |
 | `POST /admin/users/:id/transfer-documents` | `{toUserId}` | The recipient must be an active owner other than the source user. Admins cannot receive. |
 | `GET /admin/grants` | — | Every current grant: document title, owner, grantee, level and expiry. No content. |
 | `GET /admin/audit` | `actor, action (prefix), outcome, documentId, from, before (seq), limit≤500` | Newest first. |
 | `GET /admin/audit/verify` | `seq?, hash?` | Walks the HMAC chain. With an externally recorded head, also detects truncation. |
-| `GET /admin/alerts` | — | Audit chain broken, access probing, failed sign-ins, password spraying, bulk downloads, mass sharing, privileged changes. |
+| `GET /admin/alerts` | — | Audit chain broken, access probing, wrong sign-in codes per address, code guessing from one IP, bulk downloads, mass sharing, privileged changes. |
 | `GET /admin/stats` | — | Counts, and actions in the last 24 hours. |
 
 ## Other

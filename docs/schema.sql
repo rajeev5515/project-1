@@ -1,4 +1,4 @@
--- TrustVault schema (generated from src/db.ts; the app applies it automatically at startup)
+-- TrustVault schema (generated from src/db.ts; the app applies it, plus additive migrations, at startup)
 CREATE TABLE IF NOT EXISTS users (
   id              TEXT PRIMARY KEY,
   email           TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -92,7 +92,23 @@ CREATE INDEX IF NOT EXISTS idx_audit_doc ON audit_log(document_id);
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor_id);
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
 
+CREATE TABLE IF NOT EXISTS login_challenges (
+  id           TEXT PRIMARY KEY,
+  email        TEXT NOT NULL COLLATE NOCASE,
+  purpose      TEXT NOT NULL CHECK (purpose IN ('login','signup')),
+  signup_name  TEXT,
+  code_hash    TEXT NOT NULL,
+  created_at   INTEGER NOT NULL,
+  expires_at   INTEGER NOT NULL,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  consumed_at  INTEGER,
+  ip           TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_challenges_email ON login_challenges(email);
+
 CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit_log
 BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit_log
 BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+
+-- Migration (src/db.ts migrate()): ALTER TABLE users ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0 CHECK (is_demo IN (0,1));

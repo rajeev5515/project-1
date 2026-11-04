@@ -221,14 +221,84 @@ Commits: [f9a23a7](https://github.com/rajeev5515/project-1/commit/f9a23a7) (temp
 
 ---
 
+## Entry 7 — 2026-11-04 — The sharing suggestion was still wrong after the first fix (access control, again)
+
+**Asked:** As part of the React rebuild, "show the AI suggestions on the
+Sharing tab with Confirm and Dismiss".
+
+**Produced:** A good-looking suggestions card. On the **real UI with real seed
+data**, Vera's salary letter suggested **Victor, with "Can edit"**.
+
+**What was wrong:** Entry 5's fix (ignore single-recipient documents as
+evidence) was correct, but not enough. Victor still qualified through the HR
+handbook, which Olivia shares with *both* Vera and Victor, so it really is a
+team document. And because Victor has *edit* on the handbook, the heuristic
+proposed *edit* on Vera's salary letter. A confident suggestion to give a
+colleague write access to someone's pay letter. The rule "a person confirms"
+still held, but the advice was the worst available, and it would have gone out
+in the demo video. I only saw it because I looked at the screen rather than
+the test output.
+
+**What I did instead:** Two rules, enforced in `src/suggest.ts` for both the
+heuristic and the Claude path:
+* A document already shared with **exactly one person** is treated as
+  personal: no suggestions, and a note telling the owner why.
+* Suggestions are **always "Can view"**. The model may argue for edit, but the
+  server overwrites it. Only the owner can raise access.
+
+Tests: `security › T22f …Vera's salary letter … gets no suggestions` and
+`…suggested permission is always read…`. Mutants `ai-personal-target` and
+`ai-read-only`, both killed.
+
+Commit: [d9edef9](https://github.com/rajeev5515/project-1/commit/d9edef9)
+
+---
+
+## Entry 8 — 2026-11-04 — Email-code sign-in: tests that couldn't fail, and a duplicated check (authentication)
+
+**Asked:** "Replace passwords with an emailed 6-digit code, and let people
+create their own account with their email. Use Resend."
+
+**Produced:** `src/routes/auth.ts` (`/start`, `/signup`, `/verify`) and 15
+tests, all passing. Then I ran the mutation check on the new code.
+
+**What was wrong:**
+1. **`otp-inactive` survived.** Deleting "refuse if the account is now
+   inactive" from `/verify` left every test green. The only test deactivated
+   the user *before* requesting a code (so no code was ever sent). No test
+   covered a code issued *before* deactivation and used after it. The session
+   middleware would still have blocked the account on its next request, but
+   `/verify` would have issued a cookie and logged a successful sign-in for a
+   deactivated person, which is false evidence in the audit trail.
+2. **`world-admin-grants` survived.** The "demo admin cannot see real grants"
+   test had no real grants to see: the real user's only share had been refused
+   by the wall itself earlier in the test. It asserted on an empty list.
+3. **A duplicated check.** `/verify` refused already-used codes in a
+   pre-check *and* in the atomic `UPDATE … WHERE consumed_at IS NULL`. That
+   breaks rule 1 in CLAUDE.md: removing either one leaves the tests green. The
+   pre-check was the redundant one (it can't handle two requests racing).
+
+**What I did instead:** Added "a code issued before deactivation does not work
+after it" (asserts 401 and *no Set-Cookie*). The demo-admin test now creates a
+real grant first. The pre-check is deleted, so the atomic UPDATE is the single
+source of "already used". All 7 `otp-*` and 8 `world-*` mutants are now
+killed.
+
+Commit: [a5a175c](https://github.com/rajeev5515/project-1/commit/a5a175c)
+
+---
+
 ## Reused context across the week
 
 * **`CLAUDE.md`** (repository root) is loaded into every AI session. It holds
   the rules learned the hard way: one authorisation function and no duplicate
-  checks (Entry 1); bind child ids to the gated document; 404 not 403 for
-  no access (Entry 3); the audit row goes in the same transaction; no
-  permission caching; AI suggests and never grants (Entry 5); no
-  `innerHTML`.
+  checks (Entries 1 and 8); bind child ids to the gated document; 404 not 403
+  for no access (Entry 3); the audit row goes in the same transaction; no
+  permission caching; AI suggests and never grants (Entries 5 and 7); no
+  `innerHTML`; the demo-world wall; codes only ever on screen for demo
+  accounts.
+* **Look at the real screen.** Entries 5 and 7 were both found in screenshots
+  of the real UI with seed data, after every test had passed.
 * **The reviewer prompt** at the end of `CLAUDE.md` ("review this diff as an
   attacker with a low-privilege account… name one test that would fail if the
   check were deleted") is run on every change to routes or `authz.ts`.

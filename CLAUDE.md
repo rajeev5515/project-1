@@ -28,8 +28,15 @@ plausibly get wrong, in a security-critical codebase.
 6. **AI may suggest, never grant.** Model output is filtered to the
    server-built candidate list. Granting is always a separate request made by
    the owner.
-7. **No `innerHTML`** in `public/`. Build DOM with `h()` (textContent only).
+7. **No `innerHTML` / `dangerouslySetInnerHTML`** in `web/src`. Previews are
+   drawn by pdf.js on canvas, `<img>` from blob URLs, or text nodes, never HTML.
 8. **Bodies go through `onlyKeys()`.** Unknown fields are a 400.
+9. **Demo world wall.** Anything that lists, shares with, or administers users
+   must stay inside the caller's world (`is_demo`). A demo admin is a member
+   of the public.
+10. **Sign-in codes** are only ever shown in an HTTP response for `is_demo`
+    accounts. Every other code goes by email and nowhere else (not to the logs
+    in production).
 
 ## Before saying something is done
 

@@ -56,7 +56,7 @@ Seven test files fail when that happens (mutation `gate-allowed`).
 
 | # | Threat | Status | What stops it | Tests |
 |---|---|---|---|---|
-| T19 | **Refused attempts are not recorded** | Closed | `gate()` writes `document.<action>` with `outcome=denied`, the reason, path, actor and IP *before* it answers. Failed sign-ins, lockouts, refused password changes, and refused grant or version lookups are all recorded. | `isolation › T19 …`, `security › T15 › failed sign-ins are audited` |
+| T19 | **Refused attempts are not recorded** | Closed | `gate()` writes `document.<action>` with `outcome=denied`, the reason, path, actor and IP *before* it answers. Wrong or expired sign-in codes, code requests for unknown or inactive addresses, rate-limit hits, and refused grant or version lookups are all recorded. | `isolation › T19 …`, `signin › …too_many_attempts…` |
 | T18a | **Editing or deleting audit rows through the app** | Closed | No code path updates or deletes `audit_log`, and no API route exists for it. SQLite triggers abort any UPDATE or DELETE. | `security › T18 › UPDATE and DELETE … refused`, `…no API route…` |
 | T18b | **Editing rows directly in the database** (triggers dropped) | Closed (detected) | Each row stores `HMAC-SHA256(TV_AUDIT_KEY, prev_hash ‖ row)`. Changing any field, deleting a row in the middle, re-ordering rows or inserting a forged row breaks the chain at that point. `verify()` names the first bad seq. The check runs at startup, hourly, in the admin view, and with `npm run verify-audit`. | `security › T18 › editing a row…`, `…deleting a row…`, `…a forged row…` |
 | T18c | **Cutting off the tail** (deleting the newest rows) | Partial | The chain alone cannot see a missing tail. Every append also writes `{"type":"audit_head",seq,hash}` to stdout, which the host's log service keeps outside the application's reach. `verify(expectedHead)` and `/api/admin/audit/verify?seq=&hash=` compare against that head. **Gap:** nobody compares them automatically. An operator has to take the last head from the platform logs. | `security › T18 › truncating the tail…` |
@@ -71,7 +71,7 @@ Seven test files fail when that happens (mutation `gate-allowed`).
 |---|---|---|---|---|
 | T07 | **Revoked grant keeps working** because of caching, tokens or signed URLs | Closed | There are no JWTs, no signed download URLs and no permission cache. Every request reads `grants` from the database. The only credential ever issued is the session cookie, and the session does not carry permissions. | `revocation › T07 …` (revoke, then the very next request is 404, including in the list) |
 | T08 | **Deactivated user's sessions keep working** | Closed | Deactivation revokes all sessions in the same transaction. The session middleware also checks `users.active` on every request, and so does `authorizeDocument()`. | `revocation › T08 …`, `authz.test › an inactive user…` |
-| T08b | Role change, password change, admin reset and logout | Closed | Role change and admin reset revoke every session. A password change revokes the user's other sessions. Logout revokes the token on the server, not just the cookie. | `revocation › T08 …` (6 tests) |
+| T08b | Role change, admin "end sessions" and logout | Closed | A role change revokes every session. Logout revokes the token on the server, not just the cookie. | `revocation › T08 …` |
 | T09 | **Time-limited grants** | Closed | `expires_at` is checked in SQL against the current time on every request. Expiry needs no background job. | `revocation › T09 …`, `authz.test › an expired grant…` |
 | T37 | **A download in progress at the moment of revocation** | Accepted | The file (20 MB at most) is decrypted and sent in one go after the check, so a download that passed the check a few milliseconds before the revoke completes. Bytes the person already has cannot be recalled by any system. Watermarking and DRM are out of scope. | — |
 | T38 | **Revocation during a slow upload** of a new version | Closed | `gate('upload_version')` runs before the body is read and again inside the insert transaction. | (re-check is structural; not separately tested, as the race is hard to set up) |
@@ -82,14 +82,17 @@ Seven test files fail when that happens (mutation `gate-allowed`).
 
 | # | Threat | Status | What stops it | Tests |
 |---|---|---|---|---|
-| T15a | **Password guessing** against one account | Closed | 5 failures lock the account for 15 minutes. Lockouts are audited and appear as an alert. | `security › T15 › five wrong passwords…` |
-| T15b | **Password spraying** from one IP | Partial | 20 failures per IP per 15 minutes, after which that IP gets 429. There is a "password spraying" alert for one IP failing against 3 or more accounts. **Gap:** the limiter is in memory, so it resets on restart and is not shared between instances. A distributed attacker gets around per-IP limits. | `security › T15 › many failures from one IP…` |
-| T15c | **Account enumeration** through the login response or its timing | Closed | One message for every failure. A real scrypt verification runs against a dummy hash for unknown emails, so timing does not separate them. | `security › T15 › unknown email and wrong password…` |
-| T15d | **Locking out a victim** by failing their logins on purpose | Accepted | This is the price of lockout. It lasts 15 minutes, and an admin reset clears it. | — |
-| T15e | **No MFA** | Accepted | Not built in a week. It is the first thing I would add, before SSO. | — |
+| T15a | **Guessing a sign-in code** | Closed | 6 digits from a CSPRNG. Each challenge allows 5 wrong guesses and then dies, even for the right code. At most 5 challenges per address per 15 minutes (and 30 per IP), so at most 25 guesses in 15 minutes against a 1-in-1,000,000 code. Codes expire after 10 minutes. | `signin › T15 › a wrong code fails; five wrong codes kill the challenge…`, `…expired…`, `…rate limited…` (mutants `otp-attempts`, `otp-expiry`, `otp-rate-email`, `otp-compare`) |
+| T15b | **Replaying a code** | Closed | Single use is enforced by one atomic `UPDATE … WHERE consumed_at IS NULL`, which also settles two verifies racing. There is no separate pre-check that could disagree with it. | `signin › a code works once` (mutant `otp-single-use`) |
+| T15c | **Account enumeration** through `/start` or `/signup` | Closed | Every address gets the same answer. Unknown addresses get a decoy challenge and no email. Email is sent after the response, so timing doesn't reveal whether a message went out. | `signin › unknown and known emails get the same answer…` |
+| T15d | **Account takeover through sign-up** with someone else's address | Closed | Signing up with an existing address creates nothing and renames nothing. The real owner just gets a normal sign-in code in their own inbox. | `signin › sign-up with an existing email cannot take the account over` |
+| T15e | **Using one address's code for another** | Closed | A code is checked against the challenge it was issued for, and that challenge names one address. Codes are stored only as `HMAC(key, challengeId:code)`. | `signin › a code for one address cannot sign in another`, `…stored hashed…` |
+| T15f | **A code issued before deactivation** | Closed | Verify re-checks that the account is active before creating a session. | `signin › a code issued before deactivation does not work after it` (mutant `otp-inactive`; this test was added after the mutant survived) |
+| T15g | **Whoever controls the inbox controls the account** | Accepted | With passwordless sign-in, the email account is the credential. Compromised email means a compromised TrustVault account. The mitigations are short sessions (30 minutes idle, 8 hours absolute), audited sign-ins, and "end sessions" for admins. SSO or passkeys would be the next step. | — |
+| T15h | **Locking a victim out** by requesting codes for their address | Accepted | After 5 requests in 15 minutes the victim is also rate-limited for the rest of that window. That is the price of the limit. | — |
+| T15i | **The email provider (Resend) sees the codes** | Accepted | Codes pass through a third party. A code is useless after 10 minutes or one use. Mail contains no document data. | — |
+| T15j | **No email configured in production** | Closed | Real accounts get a clear 503, the same for every real or unknown address, and demo accounts keep working. Codes are never silently dropped, and the server never falls back to logging codes in production. | `signin › without email configured…` |
 | T24 | **Session theft by script, or session fixation** | Closed | Cookies are `HttpOnly`, `SameSite=Strict`, `Secure` in production, host-only and opaque. A new token is created at every login. A client-chosen token is never accepted. Sessions time out after 30 minutes idle and 8 hours absolute. | `security › T14 › session cookie is HttpOnly…`, `revocation › idle…`, `absolute…` |
-| T42 | **Weak passwords and slow hashing** | Partial | At least 12 characters. scrypt with N=2^15, r=8 is below the OWASP recommendation of N=2^17, chosen to keep a small free-tier instance responsive. No breached-password check. | `security › T15 › weak passwords…` |
-| T43 | **Temporary passwords set by an admin** | Closed | Shown once, never stored in plain text. The user must change it before any other API call. | `revocation › admin password reset…` |
 
 ## E. Browser-side attacks
 
@@ -97,6 +100,7 @@ Seven test files fail when that happens (mutation `gate-allowed`).
 |---|---|---|---|---|
 | T14 | **CSRF**: a hostile page makes the browser grant, revoke, delete or log in | Closed | `SameSite=Strict`. Every non-GET request needs the `X-TrustVault-CSRF` header, which a cross-site page cannot set without a CORS preflight, and preflights are never answered. Origin and Sec-Fetch-Site must be same-origin when present. | `security › T14 …` (4 tests) |
 | T17 | **Stored XSS through an uploaded file** opened from our origin (HTML, SVG, or text sniffed as HTML) | Closed | HTML, SVG, XML and JS are rejected at upload. Text that starts like markup is rejected. Downloads are always `application/octet-stream` with `Content-Disposition: attachment`, `nosniff` and `CSP: sandbox`, so nothing ever renders inline on our origin. | `security › T16 …`, `T17/T20 …` |
+| T17b | **In-app preview runs content from the file** (PDF JavaScript, a malicious image, HTML in a text file) | Closed | The server still sends preview bytes as an `application/octet-stream` attachment. The client draws them itself: PDF goes onto a canvas through pdf.js with XFA, embedded fonts and wasm disabled (pdf.js never executes PDF JavaScript in this mode). Images go into an `<img>` from a blob: URL. Text and CSV are inserted as text, never HTML. Only PDF, PNG, JPEG, TXT and CSV are previewable, and Office files are download-only. Previews are audited as `document.preview`, separately from downloads. The CSP adds only `img-src blob:` and `worker-src 'self'`. | `signin › T17b …` (mutants `preview-types`, `preview-audit`) |
 | T44 | **XSS through titles, descriptions, filenames or names** | Closed | The UI builds every element with `textContent`. There is no `innerHTML` anywhere. The page CSP is `script-src 'self'` with no inline scripts. | `security › T17/T20 › …strict CSP` (header). The no-innerHTML rule is checked by review: `grep innerHTML public/` returns nothing. |
 | T45 | **Clickjacking** | Closed | `frame-ancestors 'none'` and `X-Frame-Options: DENY`. | `security › T17/T20 …` |
 | T46 | **Header injection through a filename** in Content-Disposition | Closed | Filenames are stripped of control characters, quotes and bidi overrides at upload. The header uses an ASCII fallback and `filename*=UTF-8''` percent-encoding. | `security › T16 › path components and control characters…`, `sanitizeFilename…` |
@@ -125,7 +129,7 @@ Seven test files fail when that happens (mutation `gate-allowed`).
 
 | # | Threat | Status | What stops it | Tests |
 |---|---|---|---|---|
-| T41 | **A malicious admin gets content indirectly**: they reset Vera's password, sign in as Vera and download her documents. Or they create a user and ask an owner to share. | Accepted, detected | Admins are trusted with identity; that is what the role is for. Every such step is audited, raises a `privileged_change` alert, and forces a password change, so Vera finds her password no longer works. Fixes I did not build: SSO, so admins never handle passwords; two-person approval for resets; or notifying the user by email. | `revocation › admin password reset…` (audit side covered by alerts) |
+| T41 | **A malicious admin gets content indirectly**, for example by inviting an account and talking an owner into sharing with it | Accepted, detected | Admins cannot reset passwords (there are none) or read codes. They can create accounts, change roles and transfer a leaver's documents to another owner, never to themselves (T29). Every such step is audited and raises a `privileged_change` alert. | `isolation › T10 …`, `signin › T60 …` |
 | T29 | **Admin transfers documents to themselves** | Closed | The recipient must be an active user with the owner role. Admins do not have the owner role. | `isolation › T10 › T29…` |
 | T30 | **Last admin removed / self-demotion** | Closed | Refused. | `revocation › T30 …` |
 | T47 | **An owner demoted to viewer still owns their old documents** | Accepted (design) | Documents always have an owner. Demotion stops new uploads. Their sessions end. They keep ownership until an admin transfers it (Admin › Users › Transfer). That is the leaver process. | `revocation › a role change takes effect immediately` |
@@ -136,12 +140,22 @@ Seven test files fail when that happens (mutation `gate-allowed`).
 | T52 | **Single instance and single SQLite file** (availability, no HA) | Accepted | The right trade for a week. Postgres with row-level security would be the next step, and would also enforce T01 in the database itself. | — |
 | T53 | **Purge leaves recoverable bytes on disk** | Closed in effect | Purge deletes the blob *and* the wrapped data key. Without the wrapped key, any surviving ciphertext, for example in filesystem slack or a blob-only backup, cannot be decrypted (crypto-shredding). A database backup taken before the purge still holds the key. | `revocation › T28 purge…` |
 
+## J. The public demo
+
+| # | Threat | Status | What stops it | Tests |
+|---|---|---|---|---|
+| T60 | **Anyone can sign in to the demo accounts** (their code is shown on screen), including the demo *admin*. Without a wall, that person could move a real user's documents onto a demo owner, see real users' activity, or get real documents shared to a demo viewer. | Closed | Demo accounts (`is_demo=1`, only ever set by the seed) live in a separate world. A grant must stay inside the owner's world, and a cross-world target gets the same 400 as "no such user". The directory only shows your own world. A demo admin only sees and manages demo users, and the audit trail, alerts, stats and grant review are filtered to the demo world. A demo admin cannot invite users. Transfers cannot cross worlds, even by a real admin. | `signin › T60 …` (mutants `world-*`, all killed; `world-admin-grants` only after its test was fixed) |
+| T61 | **The demo admin sees the global audit-chain length** ("all N entries verified") | Accepted | It reveals roughly how active the real side is, but no names, titles or ids. | — |
+| T62 | **Demo accounts are public, so demo data is public** | Accepted, by design | The seed contains only made-up documents. The sidebar tells demo users they are in a shared demo workspace. | — |
+
 ## I. Things considered and deliberately not built
 
 * **External share links** (anonymous URLs). Every link is a bearer token
   that leaks through email forwarding, referrers and logs. External people get
   a viewer account instead (the seed includes `pat@partner.example`), so
   access stays named, revocable and audited.
+* **Passwords.** Removed in favour of emailed one-time codes, so there are no
+  password databases to leak, reset flows or reuse. The cost is T15g.
 * **Folders or groups with inheritance.** These are the cause of the "given a
   folder to see one file, now sees forty" problem in the brief. Grants are
   per document, per named person. The cost is more clicks to share many

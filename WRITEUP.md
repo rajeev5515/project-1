@@ -21,7 +21,7 @@ request.
   sign-in and refusal. Append-only triggers, an HMAC hash chain, and the
   chain head mirrored to stdout for the platform log. Verified at startup,
   hourly, on demand and offline.
-* **Admin console:** users (create, role, deactivate, reset password, end
+* **Admin console:** users (invite, role, deactivate, end
   sessions, transfer a leaver's documents), audit search, current-grant
   review, permission-change history, chain status, and alerts.
 * **Owner view:** the full activity of each of their documents, including who
@@ -40,9 +40,10 @@ read it and who may also edit it, and for how long. Editing never includes
 sharing, so access cannot spread without the owner. There are no folders and
 no groups, because inheritance is how "I gave them one file" becomes "they can
 see forty". An administrator runs the accounts and reads the audit trail, but
-gets no access to content from their role. If they want to read a salary
-letter, they have to go through a password reset, which is audited, raises an
-alert, and locks the real user out in a way they will notice. The server
+gets no access to content from their role. There are no passwords to reset and
+codes only ever go to the person's own inbox, so an admin cannot sign in as
+someone else. The closest they can get is inviting an account and persuading
+an owner to share with it, which is audited and visible to the owner. The server
 works out access from the database on every request: a grant revoked a
 millisecond ago is gone, an expired grant is gone, a deactivated person is
 gone. The only credential ever issued is an opaque session cookie, and it
@@ -54,6 +55,17 @@ The decision is `authorizeDocument()` in `src/authz.ts`, called through
 Remove the `if (!result.allowed)` block in `gate()` and every document leaks to
 every signed-in user; 7 test files fail.
 
+## Update: React rebuild with email sign-in
+
+The UI was rebuilt in React + Tailwind (teal/amber, dark mode, phone layout).
+Passwords were replaced with emailed one-time codes (Resend), and anyone can
+now create an account and becomes an owner. Files can be read in the app
+(PDF/image/text, rendered without executing anything). The seeded demo
+accounts are walled off from real ones, because anyone can sign in to them.
+The server-side authorisation model did not change. Every new check has a
+test and a mutant (see PROMPTS Entries 7 and 8 for what the AI got wrong
+along the way).
+
 ## What I deliberately did not build
 
 * **Public share links.** A link is a bearer token, and bearer tokens leak.
@@ -62,8 +74,8 @@ every signed-in user; 7 test files fail.
   feature.
 * **Signed or expiring download URLs, or JWT sessions.** Each would add a
   window after revocation.
-* **MFA and SSO.** The biggest gap. SSO would also remove admin password
-  resets, which is the main accepted risk (THREATS T41).
+* **SSO / passkeys.** Email codes make the inbox the credential (THREATS
+  T15g). SSO or passkeys would be the next step.
 * **Malware scanning, watermarking, DRM, retention and legal hold.**
 * **Multi-instance or high availability.** SQLite and an in-memory rate
   limiter tie it to one instance.
