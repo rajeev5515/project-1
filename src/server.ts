@@ -1,10 +1,12 @@
 import { createApp, createContext } from './app.ts';
-import { seed } from '../scripts/seed.ts';
+import { ensureDemoFlags, seed } from '../scripts/seed.ts';
 
 const ctx = createContext();
-if (process.env.TV_AUTO_SEED === '1' && seed(ctx, process.env.TV_SEED_PASSWORD)) {
+if (process.env.TV_AUTO_SEED === '1' && seed(ctx)) {
   console.log(JSON.stringify({ type: 'seeded' }));
 }
+const flagged = ensureDemoFlags(ctx);
+if (flagged) console.log(JSON.stringify({ type: 'demo_accounts_flagged', count: flagged }));
 const app = createApp(ctx);
 const server = app.listen(ctx.config.port, () => {
   const head = ctx.audit.head();

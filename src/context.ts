@@ -1,6 +1,7 @@
 import type { AuditEvent, AuditLog } from './audit.ts';
 import type { Config } from './config.ts';
 import type { DB } from './db.ts';
+import type { Mailer } from './mailer.ts';
 import type { BlobStore } from './storage.ts';
 
 export type Role = 'admin' | 'owner' | 'viewer';
@@ -10,7 +11,7 @@ export interface SessionUser {
   email: string;
   name: string;
   role: Role;
-  mustChangePassword: boolean;
+  isDemo: boolean;
   sessionHash: string;
 }
 
@@ -19,6 +20,7 @@ export interface AppContext {
   db: DB;
   audit: AuditLog;
   blobs: BlobStore;
+  mailer: Mailer;
 }
 
 declare global {

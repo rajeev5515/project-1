@@ -266,7 +266,6 @@ describe('T11 role checks', () => {
         ['GET', '/api/admin/users'],
         ['POST', '/api/admin/users'],
         ['PATCH', `/api/admin/users/${env.ids.vera}`],
-        ['POST', `/api/admin/users/${env.ids.vera}/reset-password`],
         ['POST', `/api/admin/users/${env.ids.vera}/revoke-sessions`],
         ['POST', `/api/admin/users/${env.ids.oscar}/transfer-documents`],
         ['GET', '/api/admin/audit'],

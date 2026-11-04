@@ -24,14 +24,14 @@ describe('authorizeDocument', () => {
     for (const a of LIVE) assert.equal(authorizeDocument(env.ctx.db, env.ids.olivia, env.docs[DOC.handbook], a).allowed, true, a);
   });
 
-  test('reader may only view and download', () => {
+  test('reader may only view, preview and download', () => {
     const allowed = LIVE.filter((a) => authorizeDocument(env.ctx.db, env.ids.vera, env.docs[DOC.handbook], a).allowed);
-    assert.deepEqual(allowed.sort(), ['download', 'view']);
+    assert.deepEqual(allowed.sort(), ['download', 'preview', 'view']);
   });
 
   test('editor may view, download, see versions, upload versions and edit metadata — nothing else', () => {
     const allowed = LIVE.filter((a) => authorizeDocument(env.ctx.db, env.ids.victor, env.docs[DOC.handbook], a).allowed);
-    assert.deepEqual(allowed.sort(), ['download', 'download_version', 'list_versions', 'update_metadata', 'upload_version', 'view']);
+    assert.deepEqual(allowed.sort(), ['download', 'download_version', 'list_versions', 'preview', 'update_metadata', 'upload_version', 'view']);
   });
 
   test('a user without a grant gets no_access for every action', () => {

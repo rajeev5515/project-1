@@ -84,7 +84,7 @@ interface SessionJoinRow {
   name: string;
   role: Role;
   active: number;
-  must_change_password: number;
+  is_demo: number;
 }
 
 /** Resolve the session cookie to a user, or leave req.user undefined. Never throws for bad cookies. */
@@ -96,7 +96,7 @@ export function sessionMiddleware(ctx: AppContext) {
     const row = ctx.db
       .prepare(
         `SELECT s.token_hash, s.last_seen_at, s.expires_at, s.revoked_at,
-                u.id, u.email, u.name, u.role, u.active, u.must_change_password
+                u.id, u.email, u.name, u.role, u.active, u.is_demo
          FROM sessions s JOIN users u ON u.id = s.user_id
          WHERE s.token_hash = ?`,
       )
@@ -118,7 +118,7 @@ export function sessionMiddleware(ctx: AppContext) {
       email: row.email,
       name: row.name,
       role: row.role,
-      mustChangePassword: row.must_change_password === 1,
+      isDemo: row.is_demo === 1,
       sessionHash: tokenHash,
     };
     req.user = user;
@@ -126,14 +126,8 @@ export function sessionMiddleware(ctx: AppContext) {
   };
 }
 
-/** Paths a user with a temporary (admin-set) password may still call. */
-const PASSWORD_CHANGE_ALLOWED = new Set(['/api/auth/me', '/api/auth/password', '/api/auth/logout']);
-
 export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   if (!req.user) return next(new HttpError(401, 'unauthenticated', 'Sign in required'));
-  if (req.user.mustChangePassword && !PASSWORD_CHANGE_ALLOWED.has(req.baseUrl + req.path)) {
-    return next(new HttpError(403, 'password_change_required', 'You must change your password first'));
-  }
   next();
 }
 

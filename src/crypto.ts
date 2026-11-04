@@ -1,59 +1,8 @@
-import {
-  createCipheriv,
-  createDecipheriv,
-  createHash,
-  randomBytes,
-  scryptSync,
-  timingSafeEqual,
-} from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
-// ---------------------------------------------------------------- passwords
-// scrypt with N=2^15, r=8, p=1 (OWASP minimum is N=2^17 for scrypt with p=1;
-// we use 2^15 with maxmem raised so the free-tier host stays responsive, and
-// accept that trade-off in THREATS.md). Format: scrypt$N$r$p$salt$hash
-const SCRYPT_N = 1 << 15;
-const SCRYPT_R = 8;
-const SCRYPT_P = 1;
-const SCRYPT_MAXMEM = 64 * 1024 * 1024;
-
-export function hashPassword(password: string): string {
-  const salt = randomBytes(16);
-  const hash = scryptSync(password.normalize('NFKC'), salt, 32, {
-    N: SCRYPT_N,
-    r: SCRYPT_R,
-    p: SCRYPT_P,
-    maxmem: SCRYPT_MAXMEM,
-  });
-  return ['scrypt', SCRYPT_N, SCRYPT_R, SCRYPT_P, salt.toString('base64'), hash.toString('base64')].join('$');
-}
-
-export function verifyPassword(password: string, stored: string): boolean {
-  const parts = stored.split('$');
-  if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
-  const [, n, r, p, saltB64, hashB64] = parts as [string, string, string, string, string, string];
-  const expected = Buffer.from(hashB64, 'base64');
-  const actual = scryptSync(password.normalize('NFKC'), Buffer.from(saltB64, 'base64'), expected.length, {
-    N: Number(n),
-    r: Number(r),
-    p: Number(p),
-    maxmem: SCRYPT_MAXMEM,
-  });
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
-}
-
-/**
- * A hash of a random password, computed once. Login for an unknown email
- * verifies against this so that "no such user" and "wrong password" take the
- * same time (no account enumeration by timing).
- */
-export const DUMMY_PASSWORD_HASH = hashPassword(randomBytes(16).toString('hex'));
-
-export function validatePasswordStrength(password: unknown): string | null {
-  if (typeof password !== 'string') return 'Password is required';
-  if (password.length < 12) return 'Password must be at least 12 characters';
-  if (password.length > 256) return 'Password is too long';
-  return null;
-}
+// Passwords were removed in favour of emailed one-time codes (routes/auth.ts).
+// The users.password_hash column is kept for schema compatibility and always
+// holds '!', which no input can match.
 
 // ------------------------------------------------------------------ tokens
 export function newToken(): string {

@@ -6,6 +6,7 @@ import { csrfMiddleware, sessionMiddleware } from './auth.ts';
 import { loadConfig, type Config } from './config.ts';
 import { HttpError, type AppContext } from './context.ts';
 import { openDb } from './db.ts';
+import { LogMailer, ResendMailer, UnconfiguredMailer, type Mailer } from './mailer.ts';
 import { adminRoutes, userRoutes } from './routes/admin.ts';
 import { authRoutes } from './routes/auth.ts';
 import { documentRoutes } from './routes/documents.ts';
@@ -14,10 +15,21 @@ import { ValidationError } from './validation.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-export function createContext(overrides: Partial<Config> = {}, sink: HeadSink = stdoutHeadSink): AppContext {
+function defaultMailer(config: Config): Mailer {
+  if (config.resendApiKey) return new ResendMailer(config.resendApiKey, config.emailFrom);
+  return config.env === 'production' ? new UnconfiguredMailer() : new LogMailer();
+}
+
+export function createContext(overrides: Partial<Config> = {}, sink: HeadSink = stdoutHeadSink, mailer?: Mailer): AppContext {
   const config = loadConfig(overrides);
   const db = openDb(config.dataDir);
-  return { config, db, audit: new AuditLog(db, config.auditKey, sink), blobs: new BlobStore(config.dataDir, config.masterKey) };
+  return {
+    config,
+    db,
+    audit: new AuditLog(db, config.auditKey, sink),
+    blobs: new BlobStore(config.dataDir, config.masterKey),
+    mailer: mailer ?? defaultMailer(config),
+  };
 }
 
 export function createApp(ctx: AppContext) {

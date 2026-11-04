@@ -26,6 +26,9 @@ import {
   ValidationError,
 } from '../validation.ts';
 
+/** Types the web client can render safely itself. Office files are download-only. */
+const PREVIEWABLE = new Set(['application/pdf', 'image/png', 'image/jpeg', 'text/plain', 'text/csv']);
+
 interface VersionRow {
   id: string;
   document_id: string;
@@ -276,6 +279,28 @@ export function documentRoutes(ctx: AppContext): Router {
     sendFile(res, v);
   });
 
+  /**
+   * In-app preview of the current version. Same rule as download (read
+   * access), audited separately so the owner can tell "opened in the browser"
+   * from "saved a copy". The bytes are still sent as an opaque attachment; the
+   * client renders them itself (images via <img>, text via textContent, PDF via
+   * pdf.js with scripting disabled), so nothing in the file runs on our origin.
+   */
+  r.get('/:id/preview', (req, res) => {
+    const { doc } = gate(req, 'preview');
+    const v = currentVersion(doc);
+    if (!v) throw new HttpError(404, 'not_found', 'Document has no content');
+    if (!PREVIEWABLE.has(v.mime_type)) throw new HttpError(415, 'not_previewable', 'This file type cannot be previewed; download it instead');
+    auditFor(ctx, req, {
+      action: 'document.preview',
+      outcome: 'success',
+      documentId: doc.id,
+      details: { versionId: v.id, versionNo: v.version_no, sha256: v.sha256 },
+    });
+    res.setHeader('X-TrustVault-Mime', v.mime_type);
+    sendFile(res, v);
+  });
+
   r.get('/:id/versions', (req, res) => {
     const { doc } = gate(req, 'list_versions');
     const rows = ctx.db
@@ -449,15 +474,20 @@ export function documentRoutes(ctx: AppContext): Router {
     const permission = body.permission;
     if (permission !== 'read' && permission !== 'edit') throw new ValidationError('permission must be read or edit');
     const expiresAt = optionalExpiry(body.expiresAt);
-    let target: { id: string; email: string; name: string; active: number } | undefined;
+    let target: { id: string; email: string; name: string; active: number; is_demo: number } | undefined;
     if (isUuid(body.userId)) {
-      target = ctx.db.prepare('SELECT id, email, name, active FROM users WHERE id = ?').get(body.userId) as typeof target;
+      target = ctx.db.prepare('SELECT id, email, name, active, is_demo FROM users WHERE id = ?').get(body.userId) as typeof target;
     } else if (typeof body.email === 'string') {
-      target = ctx.db.prepare('SELECT id, email, name, active FROM users WHERE email = ?').get(body.email.trim().toLowerCase()) as typeof target;
+      target = ctx.db.prepare('SELECT id, email, name, active, is_demo FROM users WHERE email = ?').get(body.email.trim().toLowerCase()) as typeof target;
     } else {
       throw new ValidationError('userId or email is required');
     }
-    if (!target || target.active !== 1) throw new ValidationError('No active user with that id or email');
+    // Demo accounts can be signed in to by anyone, so real documents must never
+    // be shared into the demo world (and demo users cannot reach real people).
+    // Same message as "no such user", so this cannot be used to probe the other world.
+    if (!target || target.active !== 1 || (target.is_demo === 1) !== req.user!.isDemo) {
+      throw new ValidationError('No active user with that id or email');
+    }
     if (target.id === doc.owner_id) throw new ValidationError('The owner already has full access');
 
     let suggestionId: string | null = null;

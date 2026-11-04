@@ -6,7 +6,7 @@ import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Client, DOC, login, PASSWORD, PDF, startEnv, auditRows, type TestEnv } from './helpers.ts';
+import { Client, DOC, login, PDF, startEnv, auditRows, type TestEnv } from './helpers.ts';
 import { AuditLog } from '../src/audit.ts';
 
 let env: TestEnv;
@@ -301,79 +301,21 @@ describe('T14 CSRF', () => {
   });
 
   test('a form-encoded login (what a cross-site form can send) is refused', async () => {
-    const r = await fetch(env.base + '/api/auth/login', {
+    const r = await fetch(env.base + '/api/auth/start', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: 'email=vera%40trustvault.demo&password=' + encodeURIComponent(PASSWORD),
+      body: 'email=vera%40trustvault.demo',
     });
     assert.equal(r.status, 403);
   });
 
   test('session cookie is HttpOnly and SameSite=Strict', async () => {
-    const r = await fetch(env.base + '/api/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-trustvault-csrf': '1' },
-      body: JSON.stringify({ email: 'vera@trustvault.demo', password: PASSWORD }),
-    });
+    const h = { 'content-type': 'application/json', 'x-trustvault-csrf': '1' };
+    const start = await (await fetch(env.base + '/api/auth/start', { method: 'POST', headers: h, body: JSON.stringify({ email: 'vera@trustvault.demo' }) })).json();
+    const r = await fetch(env.base + '/api/auth/verify', { method: 'POST', headers: h, body: JSON.stringify({ challengeId: start.challengeId, code: start.demoCode }) });
     const c = r.headers.getSetCookie().join(';');
     assert.match(c, /HttpOnly/i);
     assert.match(c, /SameSite=Strict/i);
-  });
-});
-
-describe('T15 sign-in hardening', () => {
-  test('unknown email and wrong password give the same answer', async () => {
-    const c = new Client(env.base);
-    const a = await c.post('/api/auth/login', { email: 'nobody@trustvault.demo', password: 'x' });
-    const b = await c.post('/api/auth/login', { email: 'vera@trustvault.demo', password: 'wrong-password' });
-    assert.equal(a.status, 401);
-    assert.equal(b.status, 401);
-    assert.deepEqual(a.json, b.json);
-  });
-
-  test('five wrong passwords lock the account, even against the right password', async () => {
-    const fresh = await (await import('./helpers.ts')).startEnv();
-    try {
-      const c = new Client(fresh.base);
-      for (let i = 0; i < 5; i++) await c.post('/api/auth/login', { email: 'victor@trustvault.demo', password: 'wrong-' + i });
-      const r = await c.post('/api/auth/login', { email: 'victor@trustvault.demo', password: PASSWORD });
-      assert.equal(r.status, 401);
-      assert.ok(auditRows(fresh, "action = 'auth.lockout'").length === 1);
-      // Admin reset clears the lock.
-      const admin = await login(fresh, 'admin');
-      const reset = await admin.post(`/api/admin/users/${fresh.ids.victor}/reset-password`);
-      assert.equal((await c.post('/api/auth/login', { email: 'victor@trustvault.demo', password: reset.json.temporaryPassword })).status, 200);
-    } finally {
-      await fresh.close();
-    }
-  });
-
-  test('many failures from one IP are rate limited', async () => {
-    const fresh = await (await import('./helpers.ts')).startEnv();
-    try {
-      const c = new Client(fresh.base);
-      let last = 0;
-      for (let i = 0; i < 22; i++) last = (await c.post('/api/auth/login', { email: `spray${i}@x.test`, password: 'Winter2026!' })).status;
-      assert.equal(last, 429);
-      const admin = await login(fresh, 'admin').catch(() => null);
-      assert.equal(admin, null, 'IP is blocked for valid credentials too while the window lasts');
-    } finally {
-      await fresh.close();
-    }
-  });
-
-  test('failed sign-ins are audited', async () => {
-    const c = new Client(env.base);
-    await c.post('/api/auth/login', { email: 'olivia@trustvault.demo', password: 'nope' });
-    const row = auditRows(env, "action = 'auth.login' AND outcome = 'denied'").at(-1);
-    assert.equal(row.actor_email, 'olivia@trustvault.demo');
-    assert.equal(JSON.parse(row.details).reason, 'bad_password');
-  });
-
-  test('weak passwords are refused', async () => {
-    const admin = await login(env, 'admin');
-    const r = await admin.post('/api/admin/users', { email: 'new@trustvault.demo', name: 'New', role: 'viewer', password: 'short' });
-    assert.equal(r.status, 400);
   });
 });
 

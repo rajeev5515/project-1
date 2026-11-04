@@ -22,6 +22,17 @@ export interface Config {
   trustProxy: boolean;
   anthropicApiKey: string | null;
   anthropicModel: string;
+  /** Resend API key for sign-in codes. Without it, production cannot email codes. */
+  resendApiKey: string | null;
+  /** From address, e.g. "TrustVault <login@yourdomain.com>". Resend's sandbox only allows onboarding@resend.dev. */
+  emailFrom: string;
+  /** Emails that become admin when they sign up (lower-cased). */
+  adminEmails: string[];
+  /** If non-empty, only these email domains may sign up (e.g. ["acme.com"]). */
+  signupDomains: string[];
+  /** Sign-in codes that may be requested per email address / per IP in 15 minutes. */
+  codeRequestsPerEmail: number;
+  codeRequestsPerIp: number;
 }
 
 function deriveDevKey(label: string): Buffer {
@@ -39,6 +50,13 @@ function parseKey(name: string, value: string | undefined, env: Config['env']): 
     throw new Error(`${name} must be 64 hex characters (32 bytes)`);
   }
   return Buffer.from(value, 'hex');
+}
+
+function list(v: string | undefined): string[] {
+  return (v ?? '')
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 export function loadConfig(overrides: Partial<Config> = {}): Config {
@@ -63,6 +81,12 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     trustProxy: process.env.TV_TRUST_PROXY === '1',
     anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? null,
     anthropicModel: process.env.TV_AI_MODEL ?? 'claude-opus-5-5',
+    resendApiKey: process.env.RESEND_API_KEY || null,
+    emailFrom: process.env.TV_EMAIL_FROM || 'TrustVault <onboarding@resend.dev>',
+    adminEmails: list(process.env.TV_ADMIN_EMAILS),
+    signupDomains: list(process.env.TV_SIGNUP_DOMAINS),
+    codeRequestsPerEmail: 5,
+    codeRequestsPerIp: 30,
     ...overrides,
   };
   return cfg;

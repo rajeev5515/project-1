@@ -31,6 +31,7 @@ export type AccessLevel = 'read' | 'edit' | 'owner';
 export type DocAction =
   | 'view' // metadata
   | 'download' // current version
+  | 'preview' // current version, rendered in the app
   | 'download_version' // any older version
   | 'list_versions'
   | 'upload_version'
@@ -47,6 +48,7 @@ const RANK: Record<AccessLevel, number> = { read: 1, edit: 2, owner: 3 };
 export const REQUIRED_LEVEL: Record<DocAction, AccessLevel> = {
   view: 'read',
   download: 'read',
+  preview: 'read',
   download_version: 'edit',
   list_versions: 'edit',
   upload_version: 'edit',

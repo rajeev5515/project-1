@@ -1,21 +1,23 @@
 /**
  * Seed demo data. Idempotent: does nothing if any user exists.
  *   npm run seed
- * Demo passwords can be overridden with TV_SEED_PASSWORD (applies to all accounts).
+ * Demo accounts sign in with a one-time code that is SHOWN ON SCREEN (they
+ * cannot receive email). They are flagged is_demo=1 and live in a separate
+ * "demo world" that can never see or share with real accounts.
  */
 import { randomUUID } from 'node:crypto';
 import { createContext } from '../src/app.ts';
 import type { AppContext, Role } from '../src/context.ts';
-import { hashPassword, sha256Hex } from '../src/crypto.ts';
+import { sha256Hex } from '../src/crypto.ts';
 import { tx } from '../src/db.ts';
 
-export const DEMO_USERS: { email: string; name: string; role: Role; password: string }[] = [
-  { email: 'admin@trustvault.demo', name: 'Ada Admin', role: 'admin', password: 'Admin-Demo-2026!' },
-  { email: 'olivia@trustvault.demo', name: 'Olivia Owner (HR)', role: 'owner', password: 'Owner-Demo-2026!' },
-  { email: 'oscar@trustvault.demo', name: 'Oscar Owner (Legal)', role: 'owner', password: 'Owner-Demo-2026!' },
-  { email: 'vera@trustvault.demo', name: 'Vera Viewer', role: 'viewer', password: 'Viewer-Demo-2026!' },
-  { email: 'victor@trustvault.demo', name: 'Victor Viewer', role: 'viewer', password: 'Viewer-Demo-2026!' },
-  { email: 'pat@partner.example', name: 'Pat Partner (external)', role: 'viewer', password: 'Viewer-Demo-2026!' },
+export const DEMO_USERS: { email: string; name: string; role: Role }[] = [
+  { email: 'admin@trustvault.demo', name: 'Ada Admin', role: 'admin' },
+  { email: 'olivia@trustvault.demo', name: 'Olivia Owner (HR)', role: 'owner' },
+  { email: 'oscar@trustvault.demo', name: 'Oscar Owner (Legal)', role: 'owner' },
+  { email: 'vera@trustvault.demo', name: 'Vera Viewer', role: 'viewer' },
+  { email: 'victor@trustvault.demo', name: 'Victor Viewer', role: 'viewer' },
+  { email: 'pat@partner.example', name: 'Pat Partner (external)', role: 'viewer' },
 ];
 
 function pdf(text: string): Buffer {
@@ -42,7 +44,18 @@ function pdf(text: string): Buffer {
   return Buffer.from(out, 'latin1');
 }
 
-export function seed(ctx: AppContext, passwordOverride?: string): boolean {
+/**
+ * Mark the seeded addresses as demo accounts. Runs on every start so that a
+ * database seeded by an earlier version (before is_demo existed) is upgraded.
+ */
+export function ensureDemoFlags(ctx: AppContext): number {
+  const stmt = ctx.db.prepare('UPDATE users SET is_demo = 1 WHERE email = ? AND is_demo = 0');
+  let n = 0;
+  for (const u of DEMO_USERS) n += Number(stmt.run(u.email).changes);
+  return n;
+}
+
+export function seed(ctx: AppContext): boolean {
   const count = (ctx.db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
   if (count > 0) return false;
   const ids: Record<string, string> = {};
@@ -52,8 +65,8 @@ export function seed(ctx: AppContext, passwordOverride?: string): boolean {
       const id = randomUUID();
       ids[u.email] = id;
       ctx.db
-        .prepare('INSERT INTO users (id, email, name, role, password_hash, created_at) VALUES (?,?,?,?,?,?)')
-        .run(id, u.email, u.name, u.role, hashPassword(passwordOverride ?? u.password), now);
+        .prepare("INSERT INTO users (id, email, name, role, password_hash, created_at, is_demo) VALUES (?,?,?,?,'!',?,1)")
+        .run(id, u.email, u.name, u.role, now);
       ctx.audit.record({ action: 'user.create', outcome: 'success', actorEmail: 'seed', targetUserId: id, details: { email: u.email, role: u.role, seeded: true } });
     }
     const docs: { owner: string; title: string; category: string; description: string; filename: string; body: Buffer; grants: [string, 'read' | 'edit'][] }[] = [
@@ -136,6 +149,7 @@ export function seed(ctx: AppContext, passwordOverride?: string): boolean {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const ctx = createContext();
-  const done = seed(ctx, process.env.TV_SEED_PASSWORD);
+  const done = seed(ctx);
+  ensureDemoFlags(ctx);
   console.log(done ? 'Seeded demo data.' : 'Users already exist; nothing to do.');
 }

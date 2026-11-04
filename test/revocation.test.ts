@@ -3,7 +3,7 @@
  */
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Client, DOC, login, PASSWORD, startEnv, type TestEnv } from './helpers.ts';
+import { Client, DOC, login, startEnv, type TestEnv } from './helpers.ts';
 
 let env: TestEnv;
 before(async () => {
@@ -71,7 +71,9 @@ describe('T08 sessions end when they should', () => {
     assert.equal((await pat2.get('/api/documents')).status, 401);
     // And they cannot sign back in.
     const again = new Client(env.base);
-    assert.equal((await again.post('/api/auth/login', { email: 'pat@partner.example', password: PASSWORD })).status, 401);
+    const start = await again.post('/api/auth/start', { email: 'pat@partner.example' });
+    assert.equal(start.json.demoCode, undefined, 'no code is issued to a deactivated account');
+    assert.equal((await again.post('/api/auth/verify', { challengeId: start.json.challengeId, code: '000000' })).status, 401);
     await admin.patch(`/api/admin/users/${env.ids.pat}`, { active: true });
   });
 
@@ -101,29 +103,6 @@ describe('T08 sessions end when they should', () => {
     const attacker = new Client(env.base);
     attacker.cookie = stolen;
     assert.equal((await attacker.get('/api/documents')).status, 401);
-  });
-
-  test('changing password ends all other sessions', async () => {
-    const a = await login(env, 'victor');
-    const b = await login(env, 'victor');
-    const r = await a.post('/api/auth/password', { currentPassword: PASSWORD, newPassword: 'Another-Password-456!' });
-    assert.equal(r.status, 200);
-    assert.equal((await b.get('/api/documents')).status, 401);
-    assert.equal((await a.get('/api/documents')).status, 200);
-    await a.post('/api/auth/password', { currentPassword: 'Another-Password-456!', newPassword: PASSWORD });
-  });
-
-  test('admin password reset ends sessions and forces a change', async () => {
-    const admin = await login(env, 'admin');
-    const vera = await login(env, 'vera');
-    const r = await admin.post(`/api/admin/users/${env.ids.vera}/reset-password`);
-    assert.equal(r.status, 200);
-    assert.equal((await vera.get('/api/documents')).status, 401);
-    const v2 = new Client(env.base);
-    assert.equal((await v2.post('/api/auth/login', { email: 'vera@trustvault.demo', password: r.json.temporaryPassword })).status, 200);
-    assert.equal((await v2.get('/api/documents')).status, 403, 'must change password before anything else');
-    assert.equal((await v2.post('/api/auth/password', { currentPassword: r.json.temporaryPassword, newPassword: PASSWORD })).status, 200);
-    assert.equal((await v2.get('/api/documents')).status, 200);
   });
 
   test('admin can revoke all sessions of a user', async () => {
