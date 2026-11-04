@@ -1,37 +1,42 @@
-# Fly.io config. Before the first deploy:
-#   fly launch --no-deploy --copy-config
-#   fly volumes create trustvault_data --size 1
-#   fly secrets set TV_MASTER_KEY=$(openssl rand -hex 32) TV_AUDIT_KEY=$(openssl rand -hex 32) \
-#                   TV_PUBLIC_ORIGIN=https://<app>.fly.dev
-#   fly deploy
-app = "trustvault"
-primary_region = "lhr"
+# fly.toml app configuration file generated for project-1-kxxnvq on 2026-11-04T11:41:21Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'project-1-kxxnvq'
+primary_region = 'lhr'
 
 [build]
 
 [env]
-  NODE_ENV = "production"
-  TV_DATA_DIR = "/data"
-  TV_TRUST_PROXY = "1"
-  TV_AUTO_SEED = "1"
-  PORT = "8080"
+  NODE_ENV = 'production'
+  PORT = '8080'
+  TV_AUTO_SEED = '1'
+  TV_DATA_DIR = '/data'
+  TV_TRUST_PROXY = '1'
 
 [[mounts]]
-  source = "trustvault_data"
-  destination = "/data"
+  source = 'trustvault_data'
+  destination = '/data'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 1
-  # Exactly one machine: rate limiting is in memory and SQLite is single-writer.
+
   [http_service.concurrency]
-    type = "requests"
+    type = 'requests'
     soft_limit = 50
 
-[[http_service.checks]]
-  path = "/healthz"
-  interval = "30s"
-  timeout = "3s"
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '3s'
+    path = '/healthz'
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 1024
